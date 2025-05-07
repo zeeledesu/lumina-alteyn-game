@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lumina Alteyn - V0.1</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="game-container">
+        <header>
+            <h1>Lumina Alteyn</h1>
+            <div id="game-menu">
+                <button id="save-button">Save Game</button>
+                <button id="load-button">Load Game</button>
+                <button id="new-game-button">New Game</button>
+            </div>
+        </header>
+
+        <div id="main-content">
+            <div id="output-area">
+                <!-- Game messages will appear here -->
+            </div>
+
+            <div id="input-area">
+                <input type="text" id="player-input" placeholder="Enter your command...">
+                <button id="submit-button">Send</button>
+                <div id="action-buttons">
+                    <!-- Contextual action buttons will appear here -->
+                </div>
+            </div>
+        </div>
+
+        <aside id="sidebar">
+            <div id="character-info" class="sidebar-section">
+                <h2 id="player-name-display">Player</h2>
+                <p>Level: <span id="player-level">1</span> (<span id="player-xp">0</span>/<span id="player-xp-next">100</span>) SP: <span id="player-sp">0</span></p>
+                <p>HP: <span id="player-hp">10</span>/<span id="player-max-hp">10</span> | MP: <span id="player-mp">5</span>/<span id="player-max-mp">5</span></p>
+                <details>
+                    <summary>Attributes</summary>
+                    <ul id="player-attributes"></ul>
+                </details>
+                <details>
+                    <summary>Skills</summary>
+                    <ul id="player-skills-summary"></ul>
+                </details>
+            </div>
+            <div id="location-info" class="sidebar-section">
+                <h3>Current Location</h3>
+                <p id="current-location-name">Unknown</p>
+                <p>Exits: <span id="location-exits">None</span></p>
+            </div>
+            <div id="inventory-info" class="sidebar-section">
+                <h3>Inventory (<span id="inventory-count">0</span>/<span id="inventory-max">10</span>)</h3>
+                <ul id="inventory-list"></ul>
+            </div>
+            <div id="active-quests" class="sidebar-section">
+                <h3>Active Quests</h3>
+                <ul id="quest-log"></ul>
+            </div>
+        </aside>
+    </div>
+
+    <div id="modal-overlay" class="hidden">
+        <div id="modal-content">
+            <!-- Modal content will be injected here -->
+        </div>
+    </div>
+
+    <!-- JavaScript files -->
+    <!-- Data modules first -->
+    <script type="module">
+        // This is a workaround for direct browser ES6 module loading without a server.
+        // In a real setup, you'd use a dev server (like Vite or Live Server)
+        // and import paths would be simpler (e.g., import { LOCATIONS } from './data/locations.js';)
+        // For now, we'll make them available globally on a temporary 'GameData' object
+        // or directly if the files are small enough to be included in main.js or structured differently.
+        // For this example, we'll assume main.js handles importing or defining these.
+    </script>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
