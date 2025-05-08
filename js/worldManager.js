@@ -26,12 +26,15 @@ class WorldManager {
         if (nextLocationId && this.locations[nextLocationId]) {
             const nextLocation = this.locations[nextLocationId];
             
+            // Check conditions before moving
             if (nextLocation.condition && !nextLocation.condition(playerManager)) {
-                const message = nextLocation.onEnterMessage || "You cannot go that way right now.";
+                // Use conditionFailMessage if available, otherwise a default
+                const message = nextLocation.conditionFailMessage || nextLocation.onEnterMessage || `You cannot go ${direction} right now.`;
                 eventBus.publish('uiNotification', { message: message, type: 'error' });
-                // Call onEnter even if blocked, if it's defined, as it might have its own message
-                if (typeof nextLocation.onEnter === 'function') {
-                    nextLocation.onEnter(eventBus.publish.bind(eventBus, 'addMessage'), playerManager); // Pass a simplified UIMessage function
+                
+                // Optional: Still trigger onEnter if it has specific messages for blocked entry
+                if (typeof nextLocation.onEnter === 'function' && nextLocation.onEnterMessage) {
+                    nextLocation.onEnter({ addMessage: (text, type) => eventBus.publish('addMessage', {text, type}) }, playerManager);
                 }
                 return false;
             }
@@ -39,18 +42,15 @@ class WorldManager {
             const oldLocationId = playerManager.gameState.currentLocationId;
             playerManager.gameState.currentLocationId = nextLocationId;
             
-            // locationChanged event will be published AFTER encounter check in V0.5
-            // The encounterManager listens to locationChanged.
-            // For V0.5, let encounterManager handle encounter checks on 'locationChanged'
-            eventBus.publish('locationChanged', { newLocationId: nextLocationId, oldLocationId }); // Corrected: use nextLocationId
+            // Publish locationChanged - EncounterManager will check for encounters based on this
+            eventBus.publish('locationChanged', { newLocationId: nextLocationId, oldLocationId }); 
 
-            // Call onEnter for the new location (after encounter check if encounters happen before full entry description)
-            // If encounters are immediate upon trying to enter, this onEnter might be too late for flavor text.
-            // For now, onEnter happens after potential encounter.
+            // UIManager will display the location AFTER encounters are resolved (or not triggered)
+            // Call onEnter logic for the new location
             if (typeof nextLocation.onEnter === 'function') {
-                // Pass a simple function for adding messages to UI, not the whole UIManager
                 nextLocation.onEnter({ addMessage: (text, type) => eventBus.publish('addMessage', {text, type}) }, playerManager);
             }
+            // Display first visit message if applicable
             if (nextLocation.firstVisitMessage && !playerManager.gameState.flags.get(`visited_${nextLocationId}`)) {
                 eventBus.publish('addMessage', {text: nextLocation.firstVisitMessage, type: 'lore-message'});
                 playerManager.gameState.flags.set(`visited_${nextLocationId}`, true);
@@ -66,7 +66,7 @@ class WorldManager {
         return this.locations[locationId];
     }
 
-    // Helper for interactions that might need world context
+    // Helper for interactions that might need world context (e.g., searching)
     triggerLocationInteraction(interactionId) {
         const location = this.getCurrentLocation();
         if (!location || !location.interactions) return;
