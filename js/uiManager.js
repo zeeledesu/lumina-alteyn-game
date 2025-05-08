@@ -10,7 +10,8 @@ import { SKILLS_DATA, SKILL_TREES_META, STATUS_EFFECTS_DATA } from './data/skill
 import { ITEMS_DATA, EQUIPMENT_SLOTS } from './data/items.js';
 import * as utils from './utils.js';
 // questManager needs to be imported to use its helper getFormattedLogText
-import { questManager } from './questManager.js';
+// Also import QUESTS_DATA as it's used directly for quest display
+import { questManager, QUESTS_DATA } from './questManager.js';
 
 
 class UIManager {
@@ -294,7 +295,7 @@ class UIManager {
         let activeQuestCount = 0;
         for (const questId in playerData.quests) {
             const questProgress = playerData.quests[questId];
-            const questData = QUESTS_DATA[questId];
+            const questData = QUESTS_DATA[questId]; // QUESTS_DATA is now imported
             if (questData && !questProgress.completed) {
                 activeQuestCount++;
                 const li = document.createElement('li');
