@@ -3,14 +3,10 @@ import { eventBus } from './eventManager.js';
 import { playerManager } from './playerManager.js';
 import { worldManager } from './worldManager.js';
 import { combatManager } from './combatManager.js';
-// Import INITIAL_ATTRIBUTE_POINTS directly if it's a constant and needed early.
-// However, it's better to get dynamic values from the responsible manager.
 import { PLAYER_CLASSES, ATTRIBUTES, DERIVED_STATS_PLAYER, INITIAL_ATTRIBUTE_POINTS } from './data/classes.js';
 import { SKILLS_DATA, SKILL_TREES_META, STATUS_EFFECTS_DATA } from './data/skills.js';
 import { ITEMS_DATA, EQUIPMENT_SLOTS } from './data/items.js';
 import * as utils from './utils.js';
-// questManager needs to be imported to use its helper getFormattedLogText
-// Also import QUESTS_DATA as it's used directly for quest display
 import { questManager, QUESTS_DATA } from './questManager.js';
 
 
@@ -31,7 +27,7 @@ class UIManager {
         this.introTextLine2 = document.getElementById('intro-text-line2');
         this.skipIntroButton = document.getElementById('skip-intro-button');
 
-        // Sidebar
+        // Sidebar Elements... (rest of constructor is the same)
         this.playerNameDisplay = document.getElementById('player-name-display');
         this.playerLevel = document.getElementById('player-level');
         this.playerXp = document.getElementById('player-xp');
@@ -106,7 +102,7 @@ class UIManager {
 
         this.submitButton.addEventListener('click', () => this.processInput());
         this.playerInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') this.processInput(); });
-        this.skipIntroButton.addEventListener('click', () => this.finishIntro());
+        this.skipIntroButton.addEventListener('click', () => this.finishIntro(true)); // Pass true if skipped by button
         this.modalOverlay.addEventListener('click', (e) => {
             if (e.target === this.modalOverlay && !this.modalContent.classList.contains('prevent-overlay-close')) {
                 this.hideModal();
@@ -121,32 +117,51 @@ class UIManager {
 
     async startAnimatedIntro() {
         this.introOverlay.classList.remove('hidden');
-        this.skipIntroButton.classList.add('hidden');
-        this.introTextLine1.innerHTML = ''; 
-        this.introTextLine2.innerHTML = '';
+        this.skipIntroButton.classList.add('hidden'); // Hide initially
+        
+        // Reset text content for CSS animation
+        this.introTextLine1.textContent = "The Twin Stars, Sansan and Teyang...";
+        this.introTextLine2.textContent = "Shattered Vyraknos' Obsidian Throne.";
 
-        // Use typeEffect for a cleaner animation for the intro lines
-        this.introTextLine1.style.opacity = 1; // Ensure parent is visible
-        this.introTextLine2.style.opacity = 1;
+        // Ensure CSS animations are reset if this intro is replayed
+        this.introTextLine1.style.animation = 'none';
+        this.introTextLine2.style.animation = 'none';
+        this.skipIntroButton.style.animation = 'none';
 
-        await utils.typeEffect(this.introTextLine1, "The Twin Stars, Sansan and Teyang...", utils.CONFIG.INTRO_TEXT_SPEED * 1.5, true);
-        await utils.delay(700);
-        await utils.typeEffect(this.introTextLine2, "Shattered Vyraknos' Obsidian Throne.", utils.CONFIG.INTRO_TEXT_SPEED * 1.5, true);
-        await utils.delay(1200);
-        this.skipIntroButton.classList.remove('hidden');
+        // Trigger reflow to restart animation
+        this.introTextLine1.offsetHeight; 
+        this.introTextLine2.offsetHeight;
+        this.skipIntroButton.offsetHeight;
 
-        this.introTimeout = setTimeout(() => this.finishIntro(), 7000);
+        this.introTextLine1.style.animation = ''; // Re-apply default animation from CSS
+        this.introTextLine2.style.animation = '';
+        this.skipIntroButton.style.animation = '';
+
+
+        // Show skip button after a delay (e.g., after line 1 animation starts)
+        setTimeout(() => {
+            this.skipIntroButton.classList.remove('hidden');
+        }, 1600); // Delay matching roughly the end of line 1 animation + a bit
+
+        // Timeout to auto-skip if player doesn't interact
+        this.introTimeout = setTimeout(() => this.finishIntro(false), 9000); // Longer intro duration
     }
 
-    finishIntro() {
+    finishIntro(skippedByUser = false) {
         if (this.introTimeout) {
             clearTimeout(this.introTimeout);
-            this.introTimeout = null; // Clear the timeout ID
+            this.introTimeout = null; 
         }
         this.introOverlay.classList.add('hidden');
+        
+        // Only show char creation if game isn't already loaded (e.g. player skipped intro but has a save)
         if (!playerManager.gameState.classId) { 
             this.showInitialTutorial();
             this.showCharacterCreationModal();
+        } else if (skippedByUser) {
+            // If skipped but game was already loaded/character exists, just ensure UI is correct
+            this.refreshAllUI(playerManager.getPublicData());
+            this.displayLocation(playerManager.gameState.currentLocationId, true);
         }
     }
     
@@ -174,19 +189,26 @@ class UIManager {
         const messageElement = document.createElement('p');
         if (type) messageElement.classList.add(...type.split(' '));
 
-        if (useTyping) {
+        if (useTyping && text) { // Added null/undefined check for text
             messageElement.classList.add('typing-effect');
             this.outputArea.appendChild(messageElement);
             this.outputArea.scrollTop = this.outputArea.scrollHeight;
-            await utils.typeEffect(messageElement, text, charDelay || utils.CONFIG.DEFAULT_TEXT_SPEED, false); // Pass false for clearExisting
-        } else {
+            await utils.typeEffect(messageElement, text, charDelay || utils.CONFIG.DEFAULT_TEXT_SPEED, false); 
+        } else if (text) { // Added null/undefined check for text
             messageElement.innerHTML = text;
             this.outputArea.appendChild(messageElement);
+        } else {
+            // If text is empty/null, don't append empty p tag.
+            this.isTyping = false; // Still need to reset this
+            if (this.messageQueue.length > 0) {
+                 await utils.delay(10); 
+                 this.processMessageQueue();
+            }
+            return;
         }
         this.outputArea.scrollTop = this.outputArea.scrollHeight;
         this.isTyping = false;
         if (this.messageQueue.length > 0) {
-            // Add a small delay before processing next message to prevent race conditions with isTyping flag
             await utils.delay(10); 
             this.processMessageQueue();
         }
@@ -199,6 +221,7 @@ class UIManager {
         }
     }
 
+    // ... rest of uiManager.js remains the same
     addCombatLogMessage(logEntry) {
         const p = document.createElement('p');
         p.classList.add('combat-text');
@@ -261,7 +284,6 @@ class UIManager {
         });
 
         this.playerEquipmentSummary.innerHTML = '';
-        // Ensure EQUIPMENT_SLOTS.player is defined and an array
         const playerSlots = EQUIPMENT_SLOTS.player || Object.keys(playerData.equipment);
         playerSlots.forEach(slot => {
             const item = playerData.equipment[slot];
@@ -295,7 +317,7 @@ class UIManager {
         let activeQuestCount = 0;
         for (const questId in playerData.quests) {
             const questProgress = playerData.quests[questId];
-            const questData = QUESTS_DATA[questId]; // QUESTS_DATA is now imported
+            const questData = QUESTS_DATA[questId]; 
             if (questData && !questProgress.completed) {
                 activeQuestCount++;
                 const li = document.createElement('li');
@@ -329,7 +351,7 @@ class UIManager {
         if (!forceRedisplay) {
             this.clearOutput();
             this.addMessage(`<strong>${location.name}</strong>`, 'location-title', false);
-            this.addMessage(location.description, 'location-description', true, utils.CONFIG.DEFAULT_TEXT_SPEED - 10); // Even faster
+            this.addMessage(location.description, 'location-description', true, utils.CONFIG.DEFAULT_TEXT_SPEED - 10); 
         }
         
         this.currentLocationName.textContent = location.name;
@@ -371,7 +393,7 @@ class UIManager {
         if (preventOverlayClose) this.modalContent.classList.add('prevent-overlay-close');
         else this.modalContent.classList.remove('prevent-overlay-close');
 
-        this.modalContent.className = 'modal-content-body'; // Reset base class
+        this.modalContent.className = 'modal-content-body'; 
         if (modalClass) this.modalContent.classList.add(...modalClass.split(' '));
 
 
@@ -402,9 +424,6 @@ class UIManager {
     }
 
     async showCharacterCreationModal() {
-        // This modal is shown after intro is finished.
-        // INITIAL_ATTRIBUTE_POINTS is now directly imported.
-        
         let partnerNameTemp = "Teyang";
         const updatePartnerPreview = (gender) => {
             partnerNameTemp = gender === 'male' ? 'Teyang' : 'Sansan';
@@ -421,7 +440,6 @@ class UIManager {
             html += `<option value="${classId}">${PLAYER_CLASSES[classId].name} - ${PLAYER_CLASSES[classId].description}</option>`;
         }
         html += `</select>`;
-        // Use the imported INITIAL_ATTRIBUTE_POINTS
         html += `<p style="margin-top:15px;">You will begin with <strong>${INITIAL_ATTRIBUTE_POINTS}</strong> attribute points to allocate.</p>`;
         
         const actions = [{ text: "Begin Your Journey", className: "primary", callback: () => {
@@ -541,7 +559,7 @@ class UIManager {
             html += "<p>Your inventory is empty.</p>";
         } else {
             html += `<ul class="inventory-modal-list">`;
-            playerData.inventory.forEach(item => { // item here already includes base data from getPublicData
+            playerData.inventory.forEach(item => { 
                 html += `<li class="item-modal-entry">
                             <strong class="item-${item.rarity || 'common'}">${item.icon || ''} ${item.name}</strong> (x${item.quantity}) - <small>${item.type}</small>
                             <p>${item.description}</p>`;
@@ -818,7 +836,10 @@ class UIManager {
             if (member.stats.currentHp > 0) this.playerPartyDisplayCombat.appendChild(this.createCombatantCard(member, true, combatState.currentActorInstanceId === member.instanceId));
         });
         
-        this.refreshAllUI(playerManager.getPublicData());
+        // This refreshAllUI might be redundant if combat state doesn't directly affect non-combat sidebar much,
+        // but good for keeping HP/MP up-to-date if they were separate.
+        // For now, playerManager.getPublicData() gets fresh data anyway.
+        this.refreshAllUI(playerManager.getPublicData()); 
     }
 
     createCombatantCard(combatant, isPlayerSide, isCurrentTurn) {
@@ -845,41 +866,39 @@ class UIManager {
                 const seSpan = document.createElement('span');
                 seSpan.className = `status-icon ${seData.type === 'buff' ? 'buff' : 'debuff'}`;
                 seSpan.title = `${seData.name} (${seInstance.duration} turns left)`;
-                seSpan.textContent = seData.name.substring(0,3);
+                seSpan.textContent = seData.name.substring(0,3).toUpperCase();
                 statusDisplay.appendChild(seSpan);
             }
         });
 
-        if ((!isPlayerSide && combatManager.pendingPlayerAction) || 
-            (isPlayerSide && combatManager.pendingPlayerAction && (combatManager.pendingPlayerAction.type === 'skill' || combatManager.pendingPlayerAction.type === 'item'))) {
-            
-            const actionDetailId = combatManager.pendingPlayerAction.detailId;
+        if (combatManager.pendingPlayerAction) {
             let canTargetThis = false;
-            if (combatManager.pendingPlayerAction.type === 'skill') {
-                const skillData = SKILLS_DATA[actionDetailId];
+            const actionType = combatManager.pendingPlayerAction.type;
+            const detailId = combatManager.pendingPlayerAction.detailId;
+
+            if (actionType === 'attack') {
+                if (!isPlayerSide) canTargetThis = true; // Can attack enemies
+            } else if (actionType === 'skill') {
+                const skillData = SKILLS_DATA[detailId];
                 if (skillData) {
-                    if (isPlayerSide && (skillData.target.includes('ally') || skillData.target === 'self' || skillData.target === 'party' || skillData.target === 'ally_leader')) canTargetThis = true;
-                    if (!isPlayerSide && skillData.target.includes('enemy')) canTargetThis = true;
+                    if (skillData.target.includes('enemy') && !isPlayerSide) canTargetThis = true;
+                    if ((skillData.target.includes('ally') || skillData.target === 'self' || skillData.target === 'party' || skillData.target === 'ally_leader') && isPlayerSide) canTargetThis = true;
                 }
-            } else if (combatManager.pendingPlayerAction.type === 'item') {
-                const itemRef = playerManager.gameState.inventory.find(i => i.instanceId === actionDetailId);
+            } else if (actionType === 'item') {
+                const itemRef = playerManager.gameState.inventory.find(i => i.instanceId === detailId);
                 const itemData = itemRef ? ITEMS_DATA[itemRef.itemId] : null;
                 if (itemData && itemData.use_effect) {
                     const effectTarget = itemData.use_effect.target;
-                    if (isPlayerSide && (effectTarget === 'self_or_ally' || effectTarget === 'ally_single' || effectTarget === 'self')) canTargetThis = true;
-                    if (!isPlayerSide && effectTarget === 'enemy_single') canTargetThis = true;
+                    if (effectTarget === 'enemy_single' && !isPlayerSide) canTargetThis = true;
+                    if ((effectTarget === 'ally_single' || effectTarget === 'self_or_ally' || effectTarget === 'self') && isPlayerSide) canTargetThis = true;
                 }
-            } else if (combatManager.pendingPlayerAction.type === 'attack' && !isPlayerSide) { // Basic attack only targets enemies
-                canTargetThis = true;
             }
-
-
+            
             if (canTargetThis) {
                 card.classList.add('targetable');
                 card.addEventListener('click', () => {
-                    if (combatManager.pendingPlayerAction) {
-                        eventBus.publish('playerSelectedCombatTarget', combatant.instanceId);
-                    }
+                    // combatManager.playerSelectsTarget(combatant.instanceId); // Directly call here
+                    eventBus.publish('playerSelectedCombatTarget', combatant.instanceId);
                 });
             }
         }
@@ -887,8 +906,7 @@ class UIManager {
     }
 
     highlightCurrentTurnActor(actor, combatState) {
-        // This is now handled by createCombatantCard by passing isCurrentTurn
-        this.updateCombatantsUI(combatState); // Re-render to apply current-turn class
+        this.updateCombatantsUI(combatState); 
     }
 
     showPlayerCombatActions(combatState, retry = false) {
@@ -916,8 +934,11 @@ class UIManager {
                 } else if (actionInfo.commandType === 'show_items') {
                     this.showPlayerCombatItemSelection(player, combatState);
                 } else {
-                    if (actionInfo.commandType === 'attack') {
-                        combatManager.playerInitiatesTargetedAction('attack', null);
+                    // For attack, item, skill (if directly chosen without sub-menu),
+                    // combatManager.playerInitiatesTargetedAction handles target prompting.
+                    // For flee/pass, directly publish combatAction.
+                    if (actionInfo.commandType === 'attack' || actionInfo.commandType === 'skill' || actionInfo.commandType === 'item') {
+                        combatManager.playerInitiatesTargetedAction(actionInfo.commandType, actionInfo.detailId);
                     } else {
                         eventBus.publish('combatAction', { type: actionInfo.commandType, casterId: player.instanceId });
                     }
@@ -937,8 +958,8 @@ class UIManager {
             return;
         }
         
-        availableSkills.forEach(skill => { // skill here is already full data from getPublicData
-            const skillData = SKILLS_DATA[skill.id]; // Double check for safety
+        availableSkills.forEach(skill => { 
+            const skillData = SKILLS_DATA[skill.id]; 
             if (!skillData) return;
             const button = document.createElement('button');
             button.textContent = `${skillData.name} (MP: ${skillData.mpCost || 0})`;
@@ -963,8 +984,7 @@ class UIManager {
     showPlayerCombatItemSelection(player, combatState) {
         this.combatActionButtons.innerHTML = '';
         const usableItems = playerManager.getPublicData().inventory.filter(item => {
-            // item already includes base data from getPublicData
-            return item.use_effect && (item.use_effect.target !== 'non_combat');
+            return item.use_effect && (item.use_effect.target !== 'non_combat' && item.use_effect.type !== 'grant_sp');
         });
 
         if (usableItems.length === 0) {
@@ -990,10 +1010,12 @@ class UIManager {
     }
 
     promptForTarget(targetableEntities, actionMessage) {
-        this.combatActionButtons.innerHTML = '';
+        this.combatActionButtons.innerHTML = ''; // Clear previous action buttons
         this.targetSelectionPrompt.textContent = actionMessage || "Select target:";
         this.targetSelectionPrompt.classList.remove('hidden');
-        this.updateCombatantsUI(combatManager.getCombatState());
+        
+        // Re-render combatants to make them clickable if they are targetable
+        this.updateCombatantsUI(combatManager.getCombatState()); // This will make cards targetable
 
         const cancelButton = document.createElement('button');
         cancelButton.textContent = "Cancel Target";
@@ -1002,7 +1024,7 @@ class UIManager {
             this.targetSelectionPrompt.classList.add('hidden');
             combatManager.cancelPlayerTargetSelection();
         });
-        this.combatActionButtons.appendChild(cancelButton);
+        this.combatActionButtons.appendChild(cancelButton); // Add cancel to the main action button area
     }
 
 
@@ -1019,7 +1041,7 @@ class UIManager {
                  eventBus.publish('requestNewGame');
             }}
         ];
-        this.showGenericModal("Game Over", html, actions, "game-over-modal", true);
+        this.showGenericModal("Game Over", html, "game-over-modal", true);
     }
 }
 export const uiManager = new UIManager();
