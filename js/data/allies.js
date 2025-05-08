@@ -1,30 +1,30 @@
 // js/data/allies.js
-import { SKILLS_DATA } from './skills.js'; // Assuming skills are defined here
+import { SKILLS_DATA } from './skills.js'; 
 
 export const ALLY_DATA = {
     sansan_dino: {
         id: "sansan_dino",
-        name: "Sansan (Dino)",
-        classId: "dino_guardian", // Link to a class definition
+        name: "Sansan", // Changed name to just Sansan for simplicity in UI
+        classId: "dino_guardian", 
         level: 10,
-        baseStats: { // Override or provide specific base stats if not fully class-driven
+        baseStats: { // These stats contribute to the class base + level scaling
             str: 25, dex: 15, con: 30, int: 10, wis: 12, cha: 18,
             hp: 200, mp: 50, mpRegen: 1,
-            attack: 0, // Will be derived
-            defense: 0, // Will be derived
+            attack: 0, // Derived
+            defense: 0, // Derived
         },
         skills: ["skill_dino_roar_taunt", "skill_protective_aura", "skill_dino_bash"], // Starting skills
-        equipment: { // Example starting equipment for Sansan
-            weapon: "w010_primal_club", // Define these items in items.js
+        equipment: { // Example starting equipment defined in items.js
+            weapon: "w010_primal_club", 
             body: "a010_thick_hide_armor"
         },
-        aiProfile: "guardian_dps", // For aiManager to pick behavior
-        // Special properties for Sansan
+        aiProfile: "guardian_dps", // Used only if not player-controlled
         isUnobtainablePlayerAlly: true,
-        dialogueTriggers: { // For his unique chat system
+        // Player control is determined by playerManager based on player name/gender
+        dialogueTriggers: { 
             missYouPrompt: "I miss you baby ko",
-            loveYouPrompt1: "baby ko i love you", // First time
-            loveYouPrompt2: "i love you baby ko", // Subsequent
+            loveYouPrompt1: "baby ko i love you", 
+            loveYouPrompt2: "i love you baby ko", 
             proposalPrompt: "I love you gid so much... will you be my forever?",
             hugReply: "*hugs Cutiepatotie tight with kisses*",
             loveReply1: "I love you so much please kita lang okay? kita lang gid asta sa ulihit.. i love you.. baby? sabta ko or bite bite roror",
@@ -37,40 +37,21 @@ export const ALLY_DATA = {
     }
 };
 
-// Define Dino Guardian Class here or in classes.js
-// If in classes.js, ensure it's imported/accessible
 export const ALLY_CLASSES = {
      dino_guardian: {
         name: "Dino Guardian",
+        isAllyOnly: true, // Mark as not selectable by player
         description: "A primeval protector, channeling the might of ancient beasts to shield their charge.",
-        baseStats: { // Base stats for the class itself if an ally is created using it directly
+        baseStats: { // Base stats for the class itself
             str: 20, dex: 12, con: 25, int: 8, wis: 10, cha: 15,
             hp: 150, mp: 30, mpRegen: 0.5
         },
-        // Skill progression for this class (if allies can learn new skills via level up)
-        skillProgression: {
+        skillProgression: { // Skills learned by level up
             1: ["skill_dino_bash"],
             5: ["skill_dino_roar_taunt"],
-            10: ["skill_protective_aura"], // Sansan starts with this as he's Lvl 10
+            10: ["skill_protective_aura"], 
             15: ["skill_earthshaker_stomp"]
         },
-        // Unique passive for this class
-        passives: [
-            {
-                id: "passive_redirect_all_damage",
-                name: "Primal Ward",
-                description: "All damage directed at the party leader (Cutiepatotie) is redirected to Sansan.",
-                condition: (caster, target, partyLeader) => caster.id === ALLY_DATA.sansan_dino.id && target?.id === partyLeader?.id,
-                effect: (damageData, combatManager) => {
-                    // This logic will be handled more directly in combatManager.applyDamage
-                    // This passive is more of a flag for that logic.
-                    damageData.redirectTargetId = ALLY_DATA.sansan_dino.id; // Mark for redirection
-                    return damageData;
-                }
-            }
-        ]
+        // The damage redirection passive is handled explicitly in combatManager.applyDamage for now
     }
 };
-
-// Make sure to define Sansan's skills in skills.js
-// e.g., skill_dino_roar_taunt, skill_protective_aura, skill_dino_bash
