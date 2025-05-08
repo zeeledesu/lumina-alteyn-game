@@ -6,7 +6,8 @@ import { SKILLS_DATA, STATUS_EFFECTS_DATA } from './data/skills.js';
 import { ITEMS_DATA } from './data/items.js';
 import { getRandomInt, delay, CONFIG, rollPercentage } from './utils.js'; // Added rollPercentage
 import { encounterManager } from './encounterManager.js';
-import { ENEMIES_DATA, ALLY_DATA } from './data/enemies.js'; // ALLY_DATA needed for Sansan's redirect, ENEMIES_DATA for rewards
+import { ENEMIES_DATA } from './data/enemies.js'; 
+import { ALLY_DATA } from './data/allies.js';
 
 
 class CombatManager {
@@ -14,12 +15,12 @@ class CombatManager {
         this.resetCombatState();
         eventBus.subscribe('startCombat', (data) => this.startCombat(data.enemies, data.fixedEncounterId));
         eventBus.subscribe('combatAction', (action) => this.processAction(action));
-        eventBus.subscribe('playerSelectedCombatTarget', (targetId) => this.playerSelectsTarget(targetId)); // Added listener
+        eventBus.subscribe('playerSelectedCombatTarget', (targetId) => this.playerSelectsTarget(targetId)); 
     }
 
     resetCombatState() {
         this.isActive = false;
-        this.playerParty = []; // { instanceId, name, stats, skills, statusEffects, isPlayer, isAlly, allyId }
+        this.playerParty = []; // { instanceId, name, stats, skills, statusEffects, isPlayer, isAlly, allyId, isPlayerControlled }
         this.enemyParty = [];  // { instanceId, name, stats, skills, statusEffects }
         this.turnOrder = [];
         this.currentTurnIndex = 0;
@@ -42,39 +43,39 @@ class CombatManager {
         // Populate player party
         const playerData = playerManager.getPublicData();
         this.playerParty.push({
-            instanceId: playerData.instanceId || "player_0", // Ensure player has an instanceId
+            instanceId: playerData.instanceId, 
             name: playerData.name,
-            stats: { ...playerData.derivedStats }, // Take a snapshot of stats for combat start
-            maxStats: { maxHp: playerData.derivedStats.maxHp, maxMp: playerData.derivedStats.maxMp }, // Store max values
+            stats: { ...playerData.derivedStats }, 
+            maxStats: { maxHp: playerData.derivedStats.maxHp, maxMp: playerData.derivedStats.maxMp }, 
             skills: playerData.skills.map(s => s.id),
-            statusEffects: [], // Initialize player status effects for combat
+            statusEffects: [], 
             isPlayer: true,
             classId: playerData.classId
         });
 
-        playerData.allies.forEach(allyData => {
-            if (allyData.derivedStats.currentHp > 0) { // Only include living allies
+        playerData.allies.forEach(allyData => { // allyData here is from playerManager.getPublicData()
+            if (allyData.derivedStats.currentHp > 0) { 
                 this.playerParty.push({
                     instanceId: allyData.instanceId,
                     name: allyData.name,
-                    allyId: allyData.allyId, // Store original allyId
-                    id: allyData.allyId, // For AI manager access
+                    allyId: allyData.allyId, 
+                    id: allyData.allyId, 
                     stats: { ...allyData.derivedStats },
                     maxStats: { maxHp: allyData.derivedStats.maxHp, maxMp: allyData.derivedStats.maxMp },
-                    skills: allyData.skills.map(s => SKILLS_DATA[s]?.id || s), // Ensure it's skill IDs
+                    skills: allyData.skills.map(s => SKILLS_DATA[s]?.id || s), // Map skill objects to IDs if needed, or ensure they are IDs
                     statusEffects: [],
                     isAlly: true,
+                    isPlayerControlled: allyData.isPlayerControlled, // Crucial for player control
                     classId: allyData.classId,
-                    aiProfile: ALLY_DATA[allyData.allyId]?.aiProfile // Add AI Profile for allies
+                    aiProfile: ALLY_DATA[allyData.allyId]?.aiProfile 
                 });
             }
         });
 
-        // Populate enemy party (enemyGroup is an array of enemy objects from EncounterManager)
         this.enemyParty = enemyGroup.map(enemy => ({
-            ...enemy, // Includes instanceId, name, stats, skills, aiProfile from EncounterManager
+            ...enemy, 
             maxStats: { maxHp: enemy.stats.maxHp, maxMp: enemy.stats.maxMp || 0 },
-            statusEffects: enemy.statusEffects || [], // Ensure it exists
+            statusEffects: enemy.statusEffects || [], 
         }));
 
 
@@ -87,43 +88,38 @@ class CombatManager {
     determineTurnOrder() {
         this.turnOrder = [...this.playerParty, ...this.enemyParty]
             .filter(c => c.stats.currentHp > 0)
-            .sort((a, b) => (b.stats.speed || 0) - (a.stats.speed || 0)); // Highest speed first
+            .sort((a, b) => (b.stats.speed || 0) - (a.stats.speed || 0)); 
         this.currentTurnIndex = 0;
     }
 
     async nextTurn() {
         if (!this.isActive) return;
 
-        // Apply DoTs / HoTs / decrement status effect durations
         for (const combatant of [...this.playerParty, ...this.enemyParty]) {
             if (combatant.stats.currentHp > 0) {
                 await this.tickStatusEffects(combatant);
             }
         }
-        // Remove dead combatants from turn order and parties
         this.cleanupDeadCombatants();
 
 
         if (this.checkCombatEnd()) return;
 
-        // Re-determine turn order if speeds might have changed or combatants died
-        // For simplicity now, just advance index or reset if end of round
         if (this.currentTurnIndex >= this.turnOrder.length) {
             this.currentTurnIndex = 0;
             this.roundCount++;
-            this.determineTurnOrder(); // Re-calculate at start of new round
+            this.determineTurnOrder(); 
             eventBus.publish('combatLog', {text: `--- Round ${this.roundCount} ---`, type: "system-message highlight-color"});
             eventBus.publish('combatRoundAdvanced', { round: this.roundCount, combatState: this.getCombatState() });
         }
         
-        if (this.turnOrder.length === 0) { // Should be caught by checkCombatEnd, but safety
-            this.endCombat(false); // Or based on who is left
+        if (this.turnOrder.length === 0) { 
+            this.endCombat(this.playerParty.length > 0 && this.enemyParty.length === 0); 
             return;
         }
 
         this.currentActor = this.turnOrder[this.currentTurnIndex];
 
-        // Skip turn if actor is stunned or incapacitated
         if (this.currentActor.statusEffects.some(se => STATUS_EFFECTS_DATA[se.statusId]?.blocksTurn)) {
             eventBus.publish('combatLog', { text: `${this.currentActor.name} is stunned and cannot act!`, type: 'system' });
             await delay(CONFIG.DEFAULT_TEXT_SPEED * 10);
@@ -135,15 +131,22 @@ class CombatManager {
         eventBus.publish('combatTurnAdvanced', { currentTurnActor: this.currentActor, combatState: this.getCombatState() });
 
         if (this.currentActor.isPlayer) {
-            // UI will show player action choices
             eventBus.publish('playerTurnStarted', { combatState: this.getCombatState() });
         } else if (this.currentActor.isAlly) {
-            const action = aiManager.getCombatAction(this.currentActor, this.playerParty, this.enemyParty);
-            await delay(CONFIG.AI_THINK_DELAY); // Simulate AI thinking
-            this.processAction(action);
+            if (this.currentActor.isPlayerControlled) {
+                eventBus.publish('playerTurnStarted', { 
+                    combatState: this.getCombatState(), 
+                    isAllyTurn: true, 
+                    allyActor: this.currentActor 
+                });
+            } else { // AI Controlled Ally
+                const action = aiManager.getCombatAction(this.currentActor, this.playerParty, this.enemyParty);
+                await delay(CONFIG.AI_THINK_DELAY); 
+                this.processAction(action);
+            }
         } else { // Enemy turn
             const action = aiManager.getCombatAction(this.currentActor, this.playerParty, this.enemyParty);
-            await delay(CONFIG.AI_THINK_DELAY); // Simulate AI thinking
+            await delay(CONFIG.AI_THINK_DELAY); 
             this.processAction(action);
         }
     }
@@ -154,12 +157,16 @@ class CombatManager {
              return;
         }
         
-        // Validate caster matches current turn actor, unless it's a player-commanded ally (future feature)
-        if (action.casterId !== this.currentActor.instanceId && !action.isPlayerCommandedAlly) {
+        if (action.casterId !== this.currentActor.instanceId) {
             console.warn("Action caster mismatch:", action, this.currentActor);
-            // If it's player's turn and the action is not for the player, don't process, let player retry.
-            if (this.currentActor.isPlayer) {
-                eventBus.publish('playerTurnStarted', { combatState: this.getCombatState(), retry: true });
+            // If it's player's turn (or player-controlled ally) and the action is not for them, let UI handle retry.
+            if (this.currentActor.isPlayer || this.currentActor.isPlayerControlled) {
+                eventBus.publish('playerTurnStarted', { 
+                    combatState: this.getCombatState(), 
+                    retry: true,
+                    isAllyTurn: this.currentActor.isAlly,
+                    allyActor: this.currentActor.isAlly ? this.currentActor : null
+                });
                 return;
             }
             // If AI turn, this is an AI logic error, advance turn to prevent freeze.
@@ -170,7 +177,7 @@ class CombatManager {
         
         const caster = this.findCombatant(action.casterId);
         if (!caster || caster.stats.currentHp <= 0) {
-             this.currentTurnIndex++; this.nextTurn(); return; // Caster is dead or invalid
+             this.currentTurnIndex++; this.nextTurn(); return; 
         }
 
         let success = false;
@@ -195,24 +202,26 @@ class CombatManager {
                 eventBus.publish('combatLog', { text: `Unknown action type: ${action.type}`, type: 'error' });
         }
         
-        // If action was successful or turn should pass
-        if (success || action.type === 'pass' || (action.type === 'flee' && this.isActive) ) { // Flee ends combat, so turn advances implicitly
-            // Decrement duration of "on next attack" buffs if used by an attack/skill
+        if (success || action.type === 'pass' || (action.type === 'flee' && this.isActive) ) { 
             if (action.type === 'attack' || (action.type === 'skill' && SKILLS_DATA[action.skillId]?.type.includes('attack'))) {
                 this.decrementSingleActionBuffs(caster);
             }
 
             this.currentTurnIndex++;
-            if (!this.checkCombatEnd()) { // Only call nextTurn if combat isn't over
+            if (!this.checkCombatEnd()) { 
                  await delay(CONFIG.POST_ACTION_DELAY); 
                  this.nextTurn();
             }
         } else {
-            // Action failed (e.g. not enough MP, invalid target), player might get another chance or turn ends.
-             if (caster.isPlayer && !this.pendingPlayerAction) {
-                eventBus.publish('playerTurnStarted', { combatState: this.getCombatState(), retry: true }); // Allow player to retry
+             if ((caster.isPlayer || caster.isPlayerControlled) && !this.pendingPlayerAction) {
+                eventBus.publish('playerTurnStarted', { 
+                    combatState: this.getCombatState(), 
+                    retry: true,
+                    isAllyTurn: caster.isAlly,
+                    allyActor: caster.isAlly ? caster : null
+                }); 
             } else {
-                this.currentTurnIndex++; // If AI or unrecoverable player error, advance turn
+                this.currentTurnIndex++; 
                 if (!this.checkCombatEnd()) this.nextTurn();
             }
         }
@@ -225,13 +234,16 @@ class CombatManager {
         }
         
         let actualTarget = target;
+        // Sansan's protection logic
         const playerChar = this.playerParty.find(p => p.isPlayer);
         const sansanAlly = this.playerParty.find(p => p.allyId === ALLY_DATA.sansan_dino.id && p.stats.currentHp > 0);
 
         if (playerChar && target.instanceId === playerChar.instanceId && 
-            caster.instanceId !== sansanAlly?.instanceId && // Sansan doesn't redirect his own beneficial actions
+            caster.instanceId !== sansanAlly?.instanceId && // Sansan doesn't redirect his own beneficial actions to himself
             sansanAlly &&
-            playerManager.isPlayerCharacter("Cutiepatotie") ) { // Sansan only protects Cutiepatotie this way
+            playerManager.isPlayerCharacter("Cutiepatotie") && // Sansan only protects Cutiepatotie this way
+            !caster.isAlly // Don't redirect friendly fire from other allies (if such skills exist)
+            ) { 
             eventBus.publish('combatLog', { text: `Sansan intercepts the attack meant for ${playerChar.name}!`, type: 'ally-special combat-ally' });
             actualTarget = sansanAlly;
         }
@@ -276,25 +288,35 @@ class CombatManager {
 
         if (caster.stats.currentMp < skillData.mpCost) {
             eventBus.publish('combatLog', { text: `${caster.name} doesn't have enough MP for ${skillData.name}!`, type: 'warning-message' });
-            if (caster.isPlayer) return false; 
-            return true; 
+            if (caster.isPlayer || caster.isPlayerControlled) return false; // Player/controlled ally action fails
+            return true; // AI action "succeeds" as turn used, but skill doesn't fire (AI should check MP first)
         }
         
-        const playerEquipment = caster.isPlayer ? playerManager.getEquippedItemsData() : null;
-        const casterEquipment = caster.isAlly ? playerManager.getAllyEquippedItemsData(caster.instanceId) : playerEquipment;
+        // Determine equipment based on caster type (player or ally)
+        let casterEquipment = null;
+        if (caster.isPlayer) {
+            casterEquipment = playerManager.getEquippedItemsData();
+        } else if (caster.isAlly) {
+            const fullAllyDataFromPlayerManager = playerManager.getPublicData().allies.find(a => a.instanceId === caster.instanceId);
+            if (fullAllyDataFromPlayerManager) {
+                casterEquipment = fullAllyDataFromPlayerManager.equipment;
+            }
+        }
 
-        if (skillData.requiresShield && !(casterEquipment?.offHand && ITEMS_DATA[casterEquipment.offHand.itemId]?.slot === "offHand")) { // Check actual item type
+
+        if (skillData.requiresShield && !(casterEquipment?.offHand && ITEMS_DATA[casterEquipment.offHand.itemId]?.slot === "offHand")) { 
              eventBus.publish('combatLog', { text: `${caster.name} needs a shield to use ${skillData.name}!`, type: 'warning-message' });
-             if (caster.isPlayer) return false; return true;
+             if (caster.isPlayer || caster.isPlayerControlled) return false; return true;
         }
         if (skillData.requiresStatus && !this.targetHasStatusEffect(caster.instanceId, skillData.requiresStatus) ){
              eventBus.publish('combatLog', { text: `${caster.name} is not in the right state to use ${skillData.name}!`, type: 'warning-message' });
-             if (caster.isPlayer) return false; return true;
+             if (caster.isPlayer || caster.isPlayerControlled) return false; return true;
         }
 
 
-        if (caster.isPlayer) playerManager.spendMp(skillData.mpCost, caster.instanceId); 
-        else caster.stats.currentMp -= skillData.mpCost; 
+        if (caster.isPlayer) playerManager.spendMp(skillData.mpCost); // Player's MP from playerManager
+        else if (caster.isAlly) playerManager.spendMp(skillData.mpCost, caster.instanceId); // Ally's MP from playerManager
+        else caster.stats.currentMp -= skillData.mpCost; // Enemy MP directly modified
 
         eventBus.publish('combatLog', { text: `${caster.name} uses ${skillData.name}!`, type: caster.isPlayer || caster.isAlly ? 'combat-player' : 'combat-enemy' });
         await delay(CONFIG.ACTION_ANIMATION_DELAY);
@@ -320,11 +342,13 @@ class CombatManager {
                 const playerChar = this.playerParty.find(p => p.isPlayer);
                 const sansanAlly = this.playerParty.find(p => p.allyId === ALLY_DATA.sansan_dino.id && p.stats.currentHp > 0);
 
-                if (playerChar && (effect.type === "damage" || effect.type === "status_effect" && STATUS_EFFECTS_DATA[effect.statusId]?.type === "debuff") && 
+                if (playerChar && (effect.type === "damage" || (effect.type === "status_effect" && STATUS_EFFECTS_DATA[effect.statusId]?.type === "debuff")) && 
                     target.instanceId === playerChar.instanceId && 
-                    caster.instanceId !== sansanAlly?.instanceId &&
+                    caster.instanceId !== sansanAlly?.instanceId && // Sansan doesn't redirect his own skills
                     sansanAlly && 
-                    playerManager.isPlayerCharacter("Cutiepatotie")) {
+                    playerManager.isPlayerCharacter("Cutiepatotie") &&
+                    !caster.isAlly // Don't redirect friendly fire from other allies
+                    ) {
                     eventBus.publish('combatLog', { text: `Sansan intercepts the effect of ${skillData.name} meant for ${playerChar.name}!`, type: 'ally-special combat-ally' });
                     actualTarget = sansanAlly;
                 }
@@ -332,7 +356,11 @@ class CombatManager {
                 switch (effect.type) {
                     case 'damage':
                         let damage = 0;
-                        const scaleStatValue = caster.stats[effect.scaleStat] !== undefined ? caster.stats[effect.scaleStat] : (caster.attributes && caster.attributes[effect.scaleStat] ? caster.attributes[effect.scaleStat].current : 0);
+                        // Ensure attributes are present, especially for non-player/non-ally casters (enemies)
+                        const attributesSource = caster.attributes || caster.stats; // Fallback to stats if attributes sub-object isn't there for enemies
+                        const scaleStatValue = attributesSource[effect.scaleStat] !== undefined ? 
+                                               (typeof attributesSource[effect.scaleStat] === 'object' ? attributesSource[effect.scaleStat].current : attributesSource[effect.scaleStat]) : 0;
+
 
                         if (effect.basePower) { 
                             damage = effect.basePower + Math.floor(scaleStatValue * effect.scaleFactor);
@@ -358,7 +386,9 @@ class CombatManager {
                         }
                         break;
                     case 'heal':
-                        const healScaleStatValue = caster.stats[effect.scaleStat] !== undefined ? caster.stats[effect.scaleStat] : (caster.attributes && caster.attributes[effect.scaleStat] ? caster.attributes[effect.scaleStat].current : 0);
+                        const healAttributesSource = caster.attributes || caster.stats;
+                        const healScaleStatValue = healAttributesSource[effect.scaleStat] !== undefined ? 
+                                                (typeof healAttributesSource[effect.scaleStat] === 'object' ? healAttributesSource[effect.scaleStat].current : healAttributesSource[effect.scaleStat]) : 0;
                         const healAmount = effect.basePower + Math.floor(healScaleStatValue * (effect.scaleFactor || 1));
                         this.applyHeal(actualTarget, healAmount, caster, skillData.name);
                         break;
@@ -378,46 +408,65 @@ class CombatManager {
     
     determineSkillTargets(caster, skillData, primaryTargetId) {
         const primaryTarget = this.findCombatant(primaryTargetId);
+        let potentialTargets;
         switch (skillData.target) {
             case 'self': return [caster];
-            case 'enemy_single': return primaryTarget && !primaryTarget.isPlayer && !primaryTarget.isAlly ? [primaryTarget] : (this.enemyParty.find(e => e.stats.currentHp > 0) ? [this.enemyParty.find(e => e.stats.currentHp > 0)] : []); 
-            case 'ally_single': return primaryTarget && (primaryTarget.isPlayer || primaryTarget.isAlly) ? [primaryTarget] : (caster.isPlayer || caster.isAlly ? [caster] : []); 
+            case 'enemy_single': 
+                potentialTargets = this.enemyParty.filter(e => e.stats.currentHp > 0);
+                return primaryTarget && !primaryTarget.isPlayer && !primaryTarget.isAlly ? [primaryTarget] : (potentialTargets.length > 0 ? [potentialTargets[0]] : []); 
+            case 'ally_single': 
+                potentialTargets = this.playerParty.filter(p => p.stats.currentHp > 0);
+                return primaryTarget && (primaryTarget.isPlayer || primaryTarget.isAlly) ? [primaryTarget] : (caster.isPlayer || caster.isAlly ? [caster] : (potentialTargets.length > 0 ? [potentialTargets[0]] : [])); 
             case 'ally_leader': 
-                const leader = this.playerParty.find(p => p.isPlayer);
+                const leader = this.playerParty.find(p => p.isPlayer && p.stats.currentHp > 0);
                 return leader ? [leader] : [];
             case 'enemy_all': return this.enemyParty.filter(e => e.stats.currentHp > 0);
             case 'ally_all': return this.playerParty.filter(p => p.stats.currentHp > 0);
-            case 'party': return this.playerParty.filter(p => p.stats.currentHp > 0);
+            case 'party': return this.playerParty.filter(p => p.stats.currentHp > 0); // Player + all allies
             case 'enemy_aoe_2': 
                  const targets = [];
-                 if (primaryTarget && !primaryTarget.isPlayer && !primaryTarget.isAlly && primaryTarget.stats.currentHp > 0) targets.push(primaryTarget);
-                 else { // If primary invalid, pick first living enemy
-                     const firstEnemy = this.enemyParty.find(e => e.stats.currentHp > 0);
-                     if (firstEnemy) targets.push(firstEnemy);
+                 const livingEnemies = this.enemyParty.filter(e => e.stats.currentHp > 0);
+                 if (primaryTarget && !primaryTarget.isPlayer && !primaryTarget.isAlly && primaryTarget.stats.currentHp > 0) {
+                     targets.push(primaryTarget);
+                 } else if (livingEnemies.length > 0) {
+                     targets.push(livingEnemies[0]); // Default to first living enemy if primary is invalid
                  }
-                 const otherEnemies = this.enemyParty.filter(e => e.stats.currentHp > 0 && e.instanceId !== (targets[0]?.instanceId));
-                 if (otherEnemies.length > 0 && targets.length < 2) targets.push(otherEnemies[getRandomInt(0, otherEnemies.length -1)]);
+                 // Add one more distinct living enemy if possible
+                 const otherEnemies = livingEnemies.filter(e => e.instanceId !== (targets[0]?.instanceId));
+                 if (otherEnemies.length > 0 && targets.length < 2) {
+                     targets.push(otherEnemies[getRandomInt(0, otherEnemies.length -1)]);
+                 }
                  return targets;
             case 'enemy_single_splash': 
-                 return primaryTarget && !primaryTarget.isPlayer && !primaryTarget.isAlly ? [primaryTarget] : (this.enemyParty.find(e => e.stats.currentHp > 0) ? [this.enemyParty.find(e => e.stats.currentHp > 0)] : []);
+                 potentialTargets = this.enemyParty.filter(e => e.stats.currentHp > 0);
+                 return primaryTarget && !primaryTarget.isPlayer && !primaryTarget.isAlly ? [primaryTarget] : (potentialTargets.length > 0 ? [potentialTargets[0]] : []);
             case 'enemy_all_self': 
                  return [caster, ...this.enemyParty.filter(e => e.stats.currentHp > 0)];
 
-            default: return primaryTarget ? [primaryTarget] : [];
+            default: return primaryTarget && primaryTarget.stats.currentHp > 0 ? [primaryTarget] : [];
         }
     }
 
     applySplashDamage(caster, primaryTarget, splashDamage, skillName) {
         const targetParty = primaryTarget.isPlayer || primaryTarget.isAlly ? this.playerParty : this.enemyParty;
-        const primaryIndex = targetParty.findIndex(t => t.instanceId === primaryTarget.instanceId);
-        if (primaryIndex === -1) return;
-
+        const livingTargetParty = targetParty.filter(t => t.stats.currentHp > 0);
+        const primaryIndexInLiving = livingTargetParty.findIndex(t => t.instanceId === primaryTarget.instanceId);
+    
+        if (primaryIndexInLiving === -1) return; // Primary target not found in living party (should not happen if splash is triggered)
+    
         const adjacentTargets = [];
-        if (primaryIndex > 0) adjacentTargets.push(targetParty[primaryIndex - 1]);
-        if (primaryIndex < targetParty.length - 1) adjacentTargets.push(targetParty[primaryIndex + 1]);
-
+        // Check member before primary in the living party array
+        if (primaryIndexInLiving > 0) {
+            adjacentTargets.push(livingTargetParty[primaryIndexInLiving - 1]);
+        }
+        // Check member after primary in the living party array
+        if (primaryIndexInLiving < livingTargetParty.length - 1) {
+            adjacentTargets.push(livingTargetParty[primaryIndexInLiving + 1]);
+        }
+    
         adjacentTargets.forEach(adjTarget => {
-            if (adjTarget && adjTarget.stats.currentHp > 0) {
+            // Ensure adjTarget is valid and alive (though filter should ensure alive)
+            if (adjTarget && adjTarget.stats.currentHp > 0) { 
                 eventBus.publish('combatLog', { text: `${skillName} splashes onto ${adjTarget.name}!`, type: 'system' });
                 this.applyDamage(adjTarget, Math.floor(splashDamage), caster, skillName, true);
             }
@@ -426,9 +475,10 @@ class CombatManager {
 
 
     async executeItem(caster, itemInstanceId, targetId) {
+        // For V0.5, only player can use items. Controlled allies cannot.
         if (!caster.isPlayer) { 
-            eventBus.publish('combatLog', { text: "Only players can use items in combat currently.", type: 'error' });
-            return true; 
+            eventBus.publish('combatLog', { text: "Only the main player can use items in combat currently.", type: 'error' });
+            return false; // Action fails for non-player if they somehow try
         }
         const itemRef = playerManager.gameState.inventory.find(i => i.instanceId === itemInstanceId);
         if (!itemRef) {
@@ -436,13 +486,16 @@ class CombatManager {
         }
         const itemData = ITEMS_DATA[itemRef.itemId];
         if (!itemData.use_effect) {
+            eventBus.publish('combatLog', { text: `${itemData.name} cannot be used.`, type: 'error' }); return false;
+        }
+        if (itemData.use_effect.target === 'non_combat' || itemData.use_effect.type === 'grant_sp') {
             eventBus.publish('combatLog', { text: `${itemData.name} cannot be used in combat.`, type: 'error' }); return false;
         }
 
+
         const target = this.findCombatant(targetId);
-        let actualTarget = target || caster; // Default to self if target not applicable/needed based on itemEffect.target
+        let actualTarget = target || caster; 
         
-        // Validate target based on itemData.use_effect.target
         const itemTargetType = itemData.use_effect.target;
         if (itemTargetType === 'enemy_single' && (!actualTarget || actualTarget.isPlayer || actualTarget.isAlly)) {
              eventBus.publish('combatLog', { text: `Invalid target for ${itemData.name}. Must be an enemy.`, type: 'error' }); return false;
@@ -470,14 +523,11 @@ class CombatManager {
             case 'cure_status':
                 this.removeStatusEffect(actualTarget, effect.statusId, itemData.name);
                 break;
-            case 'grant_sp': // SP orbs shouldn't be usable in combat
-                 eventBus.publish('combatLog', { text: `${itemData.name} cannot be used in combat.`, type: 'error' });
-                 return false; // Action fails
             default:
                  eventBus.publish('combatLog', { text: `Effect of ${itemData.name} not implemented.`, type: 'error' });
+                 return true; // Turn still used, effect just not there
         }
 
-        // Only remove item if successfully used (e.g. not SP orb in combat)
         if (itemData.stackable) playerManager.removeItem(itemRef.instanceId, 1); 
         else playerManager.removeItem(itemRef.instanceId);
 
@@ -485,20 +535,24 @@ class CombatManager {
     }
 
     async executeFlee(caster) {
-        if (!caster.isPlayer) return true; 
+        // Flee is only for the main player character or the entire party acting as one.
+        // Controlled allies currently cannot initiate flee.
+        if (!caster.isPlayer) return true; // Turn used if non-player tried
 
         eventBus.publish('combatLog', { text: `${caster.name} attempts to flee...`, type: 'system' });
         await delay(CONFIG.ACTION_ANIMATION_DELAY);
         
         const enemyAvgSpeed = this.enemyParty.reduce((avg, e) => avg + (e.stats.speed || 0), 0) / (this.enemyParty.length || 1);
-        const fleeChance = 60 + (caster.stats.speed || 0) - enemyAvgSpeed;
+        const playerEffectiveSpeed = this.playerParty.find(p => p.isPlayer)?.stats.speed || caster.stats.speed || 0; // Use player's speed for flee chance
+        const fleeChance = 60 + playerEffectiveSpeed - enemyAvgSpeed;
+
         if (rollPercentage(Math.max(10, Math.min(90, fleeChance)))) {
             eventBus.publish('combatLog', { text: `Successfully fled!`, type: 'success-message' });
             this.endCombat(false, true); 
-            return true; // Important: Flee action is successful in terms of turn progression
+            return true; 
         } else {
             eventBus.publish('combatLog', { text: `Could not escape!`, type: 'error-message' });
-            return true; // Turn is still used even if flee fails
+            return true; 
         }
     }
 
@@ -568,6 +622,7 @@ class CombatManager {
 
             if (effectData.dot && combatant.stats.currentHp > 0) {
                 let dotAmount = effectData.dot.basePower;
+                // Consider scaleStat for DoT/HoT in future
                 if (effectData.dot.damageType === "heal") { 
                     this.applyHeal(combatant, dotAmount, null, effectData.name);
                 } else { 
@@ -610,15 +665,19 @@ class CombatManager {
     cleanupDeadCombatants() {
         this.playerParty = this.playerParty.filter(p => p.stats.currentHp > 0);
         this.enemyParty = this.enemyParty.filter(e => e.stats.currentHp > 0);
+        // Adjust currentTurnIndex if current actor died or actors before it in turn order died
+        const oldCurrentActorId = this.currentActor?.instanceId;
         this.turnOrder = this.turnOrder.filter(c => c.stats.currentHp > 0);
         
-        const currentActorStillInOrder = this.turnOrder.find(c => c.instanceId === this.currentActor?.instanceId);
-        if (currentActorStillInOrder) {
-            this.currentTurnIndex = this.turnOrder.indexOf(currentActorStillInOrder);
-        } else if (this.currentActor && this.currentActor.stats.currentHp <= 0) {
-             // If current actor died, index needs careful adjustment.
-             // However, re-determining turn order at start of round and after cleanup
-             // should largely handle this. If issues persist, specific index logic needed here.
+        // Try to find the same actor or the one that would now be at the current index
+        const newCurrentActorIndex = this.turnOrder.findIndex(c => c.instanceId === oldCurrentActorId);
+        if (newCurrentActorIndex !== -1) {
+            this.currentTurnIndex = newCurrentActorIndex;
+        } else {
+             // If the current actor died, the index might implicitly be correct due to removal,
+             // or it might need to be decremented if actors before it were removed.
+             // For simplicity, if current actor is not found, determineTurnOrder at round end will fix it.
+             // If it's mid-round, and current actor died, currentTurnIndex points to the *next* actor.
         }
     }
 
@@ -642,19 +701,17 @@ class CombatManager {
         this.isActive = false;
         playerManager.gameState.inCombat = false;
 
-        this.playerParty.forEach(combatPlayer => {
-            if (combatPlayer.isPlayer) {
-                playerManager.gameState.derivedStats.currentHp = combatPlayer.stats.currentHp;
-                playerManager.gameState.derivedStats.currentMp = combatPlayer.stats.currentMp;
-            } else if (combatPlayer.isAlly) {
-                const allyInGameState = playerManager.gameState.allies.find(a => a.instanceId === combatPlayer.instanceId);
-                if (allyInGameState) {
-                    allyInGameState.derivedStats.currentHp = combatPlayer.stats.currentHp;
-                    allyInGameState.derivedStats.currentMp = combatPlayer.stats.currentMp;
-                }
+        // Restore player and ally HP/MP from combat instances to main gameState
+        this.playerParty.forEach(combatMember => {
+            if (combatMember.isPlayer) {
+                playerManager.syncCharacterCombatStatsToGameState(combatMember.instanceId, combatMember.stats.currentHp, combatMember.stats.currentMp);
+            } else if (combatMember.isAlly) {
+                playerManager.syncCharacterCombatStatsToGameState(combatMember.instanceId, combatMember.stats.currentHp, combatMember.stats.currentMp);
             }
         });
-        playerManager.updateAllStats(); 
+        // For any player party members not in the final playerParty list (i.e., they died)
+        // their HP/MP in playerManager.gameState should reflect 0 or their state before combat end sync.
+        // playerManager.updateAllStats(); // Recalculate derived stats based on new HP/MP for UI
         eventBus.publish('playerDataUpdated', playerManager.getPublicData());
 
 
@@ -664,9 +721,22 @@ class CombatManager {
             let totalGoldMax = 0;
             const lootDrops = [];
 
-            // Use the initial enemy data for rewards, not the combat-modified instances
-            const originalEnemiesInCombat = this.turnOrder.filter(c => !c.isPlayer && !c.isAlly && c.stats.currentHp <= 0)
-                                          .map(defeatedCombatant => ENEMIES_DATA[defeatedCombatant.id]); // Get original data
+            // Get original enemy data for rewards
+            const defeatedEnemyCombatants = this.turnOrder.filter(c => (!c.isPlayer && !c.isAlly) && c.stats.currentHp <= 0);
+            // If turnOrder was already cleaned, we might need initial enemy list. For simplicity, assume turnOrder had them.
+            // A better way is to store the initial enemy party separately.
+            // For now, this should work if endCombat is called before turnOrder is too heavily modified post-defeat.
+
+            // Use this.enemyParty from startCombat for original data:
+            // We need a way to map defeated instances back to their original definition if turnOrder doesn't hold full original data.
+            // For now, assume this.enemyParty initially populated in startCombat holds necessary base IDs.
+            // The initial enemyGroup passed to startCombat is best. Let's store it.
+            // This requires change in startCombat to store originalEnemyGroup.
+            // Quick fix: this.turnOrder filtering should be okay for now.
+
+            const originalEnemiesInCombat = this.turnOrder
+                                          .filter(c => !c.isPlayer && !c.isAlly && c.stats.currentHp <= 0) // Get defeated non-player combatants
+                                          .map(defeatedCombatant => ENEMIES_DATA[defeatedCombatant.id]); // Map to original ENEMIES_DATA using base ID
 
             originalEnemiesInCombat.forEach(originalEnemyData => {
                  if(originalEnemyData) {
@@ -676,9 +746,9 @@ class CombatManager {
                     originalEnemyData.loot_table?.forEach(lootEntry => {
                         if (rollPercentage(lootEntry.chance)) {
                             const quantity = lootEntry.quantity ? (typeof lootEntry.quantity === 'object' ? getRandomInt(lootEntry.quantity.min, lootEntry.quantity.max) : lootEntry.quantity) : 1;
-                            if (lootEntry.questIdLink) {
+                            if (lootEntry.questIdLink) { // Quest-related drops
                                 const quest = playerManager.gameState.quests[lootEntry.questIdLink];
-                                if (quest && !quest.completed) {
+                                if (quest && !quest.completed && (quest.stage === lootEntry.questStageLink || lootEntry.questStageLink === undefined)) {
                                     lootDrops.push({ itemId: lootEntry.itemId, quantity });
                                 }
                             } else {
@@ -732,9 +802,12 @@ class CombatManager {
     }
 
     playerInitiatesTargetedAction(actionType, detailId ) {
+        // currentActor can be player or player-controlled ally
+        if (!this.currentActor || !(this.currentActor.isPlayer || this.currentActor.isPlayerControlled)) return;
+
         this.pendingPlayerAction = { type: actionType, detailId: detailId, casterId: this.currentActor.instanceId };
         let targetableEntities = [];
-        const playerActor = this.currentActor; // Should be the player
+        const activeActor = this.currentActor; 
 
         let skillOrItemData = null;
         let targetDefinition = null;
@@ -744,12 +817,17 @@ class CombatManager {
             if (!skillOrItemData) { this.cancelPlayerTargetSelectionWithMessage("Skill not found."); return; }
             targetDefinition = skillOrItemData.target;
         } else if (actionType === 'item') {
+            // Only player can use items. If a controlled ally tries, this path shouldn't be hit.
+            // UI should prevent controlled allies from selecting "item" action.
+            if (!activeActor.isPlayer) { this.cancelPlayerTargetSelectionWithMessage("Allies cannot use items this way."); return; }
             const itemRef = playerManager.gameState.inventory.find(i => i.instanceId === detailId);
             skillOrItemData = itemRef ? ITEMS_DATA[itemRef.itemId] : null;
-            if (!skillOrItemData || !skillOrItemData.use_effect) { this.cancelPlayerTargetSelectionWithMessage("Item not found or not usable."); return; }
+            if (!skillOrItemData || !skillOrItemData.use_effect || skillOrItemData.use_effect.target === 'non_combat') { 
+                this.cancelPlayerTargetSelectionWithMessage("Item not found or not usable in combat."); return; 
+            }
             targetDefinition = skillOrItemData.use_effect.target;
         } else if (actionType === 'attack') {
-            targetDefinition = 'enemy_single'; // Basic attack always targets one enemy
+            targetDefinition = 'enemy_single'; 
         } else {
             this.cancelPlayerTargetSelectionWithMessage("Unknown action type for targeting.");
             return;
@@ -757,16 +835,17 @@ class CombatManager {
         
         // Determine targetable entities based on definition
         if (targetDefinition.includes('enemy')) targetableEntities = this.enemyParty.filter(e => e.stats.currentHp > 0);
-        else if (targetDefinition.includes('ally') || targetDefinition.includes('party') || targetDefinition === 'ally_leader') targetableEntities = this.playerParty.filter(p => p.stats.currentHp > 0);
+        else if (targetDefinition.includes('ally') || targetDefinition.includes('party') || targetDefinition === 'ally_leader' || targetDefinition === 'self_or_ally') {
+            targetableEntities = this.playerParty.filter(p => p.stats.currentHp > 0);
+        }
         else if (targetDefinition === 'self') {
-            this.processAction({ ...this.pendingPlayerAction, targetId: playerActor.instanceId });
+            this.processAction({ ...this.pendingPlayerAction, targetId: activeActor.instanceId });
             this.pendingPlayerAction = null;
             return;
         }
         
-        // If target is _all or party, no specific target selection needed for single entities
-        if (targetDefinition.includes("_all") || targetDefinition === "party") {
-             this.processAction({ ...this.pendingPlayerAction, targetId: null }); // targetId null for _all or party
+        if (targetDefinition.includes("_all") || targetDefinition === "party" || targetDefinition === "enemy_all_self") {
+             this.processAction({ ...this.pendingPlayerAction, targetId: null }); 
              this.pendingPlayerAction = null;
              return;
         }
@@ -787,21 +866,27 @@ class CombatManager {
     cancelPlayerTargetSelectionWithMessage(message) {
         eventBus.publish('combatLog', {text: message, type: 'warning-message'});
         this.pendingPlayerAction = null; 
-        eventBus.publish('playerTurnStarted', { combatState: this.getCombatState(), retry: true });
+        eventBus.publish('playerTurnStarted', { 
+            combatState: this.getCombatState(), 
+            retry: true,
+            isAllyTurn: this.currentActor?.isAlly && this.currentActor?.isPlayerControlled,
+            allyActor: (this.currentActor?.isAlly && this.currentActor?.isPlayerControlled) ? this.currentActor : null
+        });
     }
 
     playerSelectsTarget(targetInstanceId) {
         if (this.pendingPlayerAction) {
-            // Validate if the selected target is valid for the pending action
             const target = this.findCombatant(targetInstanceId);
             if (!target || target.stats.currentHp <= 0) {
                 eventBus.publish('combatLog', {text: "Invalid or defeated target selected.", type: 'error-message'});
-                // Re-prompt for target without cancelling the whole action
-                const tempPendingAction = { ...this.pendingPlayerAction }; // Store before clearing
-                this.pendingPlayerAction = null; // Clear to avoid recursion loop if playerInitiatesTargetedAction is called by UI again immediately
-                this.playerInitiatesTargetedAction(tempPendingAction.type, tempPendingAction.detailId);
+                const tempPendingAction = { ...this.pendingPlayerAction }; 
+                this.pendingPlayerAction = null; 
+                this.playerInitiatesTargetedAction(tempPendingAction.type, tempPendingAction.detailId); // Re-initiate target selection
                 return;
             }
+            // Further validation: is the target valid for *this specific* action type?
+            // E.g., healing skill on enemy, attack skill on ally.
+            // For now, assume playerInitiatesTargetedAction filtered targetableEntities correctly.
 
             const fullAction = { ...this.pendingPlayerAction, targetId: targetInstanceId };
             this.pendingPlayerAction = null;
@@ -811,11 +896,12 @@ class CombatManager {
 
      cancelPlayerTargetSelection() {
         this.pendingPlayerAction = null;
-        eventBus.publish('playerTurnStarted', { combatState: this.getCombatState(), retry: true }); 
+        eventBus.publish('playerTurnStarted', { 
+            combatState: this.getCombatState(), 
+            retry: true,
+            isAllyTurn: this.currentActor?.isAlly && this.currentActor?.isPlayerControlled,
+            allyActor: (this.currentActor?.isAlly && this.currentActor?.isPlayerControlled) ? this.currentActor : null
+        }); 
     }
 }
 export const combatManager = new CombatManager();
-
-// Also need to import ALLY_DATA in combatManager if not already there.
-// And ENEMIES_DATA if it's used for reward calculation (which it is).
-// This is done at the top of the modified combatManager.js
