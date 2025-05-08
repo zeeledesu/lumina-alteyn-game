@@ -6,15 +6,20 @@
     <title>Lumina Alteyn - V0.5</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@400;700&family=Cinzel:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Link for potential favicon -->
+    <!-- <link rel="icon" href="favicon.ico" type="image/x-icon"> -->
 </head>
 <body>
+    <!-- Game Container -->
     <div id="game-container">
-        <div id="intro-overlay" class="hidden"> <!-- For animated intro -->
+        <!-- Animated Intro Overlay -->
+        <div id="intro-overlay" class="hidden"> 
             <p id="intro-text-line1"></p>
             <p id="intro-text-line2"></p>
-            <button id="skip-intro-button" class="hidden">Skip Intro</button>
+            <!-- Skip button removed -->
         </div>
 
+        <!-- Header with Title and Menu -->
         <header>
             <h1>Lumina Alteyn</h1>
             <div id="game-menu">
@@ -25,10 +30,13 @@
             </div>
         </header>
 
+        <!-- Main Content Wrapper (for switching between normal and combat) -->
         <div id="main-content-wrapper">
+            <!-- Normal Game View -->
             <div id="main-content">
                 <div id="output-area">
-                    <!-- Game messages will appear here -->
+                    <!-- Game messages appear here -->
+                    <p class="system-message">Initializing Lumina Alteyn V0.5...</p>
                 </div>
 
                 <div id="input-area">
@@ -36,19 +44,27 @@
                     <button id="submit-button">Send</button>
                 </div>
                 <div id="action-buttons">
-                    <!-- Contextual action buttons will appear here -->
+                    <!-- Contextual action buttons appear here -->
                 </div>
             </div>
 
-            <div id="combat-ui-container" class="hidden"> <!-- For combat specific UI -->
-                <div id="enemy-party-display"></div>
-                <div id="player-party-display-combat"></div>
-                <div id="combat-action-buttons"></div>
-                <div id="target-selection-prompt" class="hidden">Select target:</div>
+            <!-- Combat UI (Hidden initially) -->
+            <div id="combat-ui-container" class="hidden"> 
+                <div id="enemy-party-display">
+                    <!-- Enemy combatant cards appear here -->
+                </div>
+                <div id="player-party-display-combat">
+                    <!-- Player/Ally combatant cards appear here -->
+                </div>
+                 <div id="target-selection-prompt" class="hidden">Select target:</div>
+                <div id="combat-action-buttons">
+                    <!-- Combat action buttons appear here -->
+                </div>
             </div>
         </div>
 
 
+        <!-- Sidebar -->
         <aside id="sidebar">
             <div id="character-info" class="sidebar-section">
                 <h2 id="player-name-display">Player</h2>
@@ -57,17 +73,17 @@
                 <p>Gold: <span id="player-gold">0</span></p>
                 <details>
                     <summary>Attributes (<span id="attribute-points-avail">0</span>)</summary>
-                    <ul id="player-attributes"></ul>
+                    <ul id="player-attributes"><li>Loading...</li></ul>
                     <button id="open-alloc-modal-button" class="sidebar-button hidden">Allocate Points</button>
                 </details>
                 <details>
                     <summary>Equipment</summary>
-                    <ul id="player-equipment-summary"></ul>
+                    <ul id="player-equipment-summary"><li>None</li></ul>
                     <button id="open-equip-modal-button" class="sidebar-button">Manage Equipment</button>
                 </details>
                 <details>
                     <summary>Skills</summary>
-                    <ul id="player-skills-summary"></ul>
+                    <ul id="player-skills-summary"><li>None</li></ul>
                     <button id="open-skilltree-modal-button" class="sidebar-button">View Skill Tree</button>
                 </details>
                  <details id="party-info-sidebar" class="hidden">
@@ -77,28 +93,30 @@
             </div>
             <div id="location-info" class="sidebar-section">
                 <h3>Current Location</h3>
-                <p id="current-location-name">Unknown</p>
+                <p id="current-location-name">Initializing...</p>
                 <p>Exits: <span id="location-exits">None</span></p>
                 <p id="location-notes"></p>
             </div>
             <div id="inventory-info" class="sidebar-section">
                 <h3>Inventory (<span id="inventory-count">0</span>/<span id="inventory-max">10</span>)</h3>
-                <ul id="inventory-list"></ul>
+                <ul id="inventory-list"><li>Empty</li></ul>
                 <button id="open-inventory-modal-button" class="sidebar-button">Manage Inventory</button>
             </div>
             <div id="active-quests" class="sidebar-section">
                 <h3>Active Quests</h3>
-                <ul id="quest-log"></ul>
+                <ul id="quest-log"><li>None</li></ul>
             </div>
         </aside>
     </div>
 
+    <!-- Modal Overlay -->
     <div id="modal-overlay" class="hidden">
         <div id="modal-content">
-            <!-- Modal content will be injected here -->
+            <!-- Modal content injected here -->
         </div>
     </div>
 
+    <!-- Main Game Script -->
     <script type="module" src="js/main.js"></script>
 </body>
 </html>
