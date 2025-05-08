@@ -1,78 +1,70 @@
 // js/questManager.js
 import { eventBus } from './eventManager.js';
 import { playerManager } from './playerManager.js';
-import { ITEMS_DATA } from './data/items.js'; // For item rewards/objectives
-import { worldManager } from './worldManager.js'; // For location objectives
+import { ITEMS_DATA } from './data/items.js'; 
+import { worldManager } from './worldManager.js'; 
 
 export const QUESTS_DATA = {
-    // --- MAIN QUESTS ---
     main001_find_partner: {
         id: "main001_find_partner",
         name: "Echoes of a Lost Star",
-        log: [ // Stage 0
-            "Your memories are fragmented, but one name echoes: [PartnerName]. You feel an overwhelming urge to find them. Search for clues about their whereabouts.",
-            // Stage 1
+        log: [ 
+            "Your memories are fragmented, but one name echoes: [PartnerName]. You feel an overwhelming urge to find them. Search for clues about their whereabouts in the Whispering Woods or nearby ruins.",
             "You found a scholar named Elman in a ruined outpost. He mentioned seeing someone fitting [PartnerName]'s description heading towards the village of Sleepy Hollow. He also gave you a pass to the Study Hub he sponsors there.",
-            // Stage 2
             "In Sleepy Hollow, you heard tales of a reclusive hermit in the Deep Woods who knows many secrets. Perhaps they can help you find [PartnerName]."
         ],
         stages: [
-            { // Stage 0: Investigate the ruined outpost
-                objective: { type: "flag_set", flag: "elman_rescued_and_talked" }, // Set by completing MQ002
+            { 
+                objective: { type: "flag_set", flag: "elman_rescued_and_talked" }, 
                 onCompleteMessage: "Elman's information points you towards Sleepy Hollow.",
             },
-            { // Stage 1: Reach Sleepy Hollow Square
+            { 
                 objective: { type: "reach_location", locationId: "sleepy_hollow_square" },
                 onCompleteMessage: "You've arrived in Sleepy Hollow. Now to find more clues.",
             },
-            { // Stage 2: Learn about the Deep Woods Hermit (e.g. by talking to an NPC in the Inn)
+            { 
                 objective: { type: "flag_set", flag: "learned_of_deep_woods_hermit" },
                 onCompleteMessage: "The Deep Woods Hermit... a risky path, but potentially rewarding."
             }
-            // More stages: Find hermit, get clue about Dragon God cult, etc.
         ],
-        rewards: { xp: 100, sp: 10 }, // Initial reward, can add more per stage or final
+        rewards: { xp: 100, sp: 10 }, 
         isMainQuest: true,
     },
     main002_scholars_plea: {
         id: "main002_scholars_plea",
         name: "The Scholar's Plea",
-        log: [ // Stage 0
+        log: [ 
             "You found a scholar named Elman trapped in a ruined outpost east of the Whispering Woods. He's besieged by goblins and needs help!",
-            // Stage 1
             "You defeated Groknar, the goblin chief, and saved Elman. Talk to him to see what he knows.",
-            // Stage 2
             "Elman thanked you profusely. He mentioned seeing someone matching [PartnerName]'s description. As a reward, he gave you a pass to the Study Hub in Sleepy Hollow and a signet ring."
         ],
         stages: [
-            { // Stage 0: Defeat Groknar in the Ruined Outpost Interior
+            { 
                 objective: { type: "flag_set", flag: "ruined_outpost_interior_fixed_encounter_cleared" },
                 onCompleteMessage: "The goblin chief lies defeated. The scholar seems safe now."
             },
-            { // Stage 1: Talk to Elman after rescuing him
-                objective: { type: "dialogue_npc_stage", npcId: "elman_the_scholar", dialogueStage: "post_rescue_thanks" }, // NPC dialogue system needs to set a flag like "elman_talked_post_rescue"
+            { 
+                objective: { type: "flag_set", flag: "elman_the_scholar_post_rescue_thanks_done" }, // This flag is set by InputParser dialogue interaction
                 onCompleteMessage: "Elman is grateful and has some information for you."
             }
         ],
         rewards: { xp: 250, gold: 100, sp: 50, items: [{itemId: "i004", quantity: 1}, {itemId: "sp_orb_medium", quantity: 1}] },
         onStart: (pm, ui) => {
             ui.addMessage("You've decided to help the trapped scholar. This could be dangerous.", "system-message");
-            // Could also add Elman as a temporary follower or make him interactable
         },
         onComplete: (pm) => {
             pm.gameState.flags.set('study_hub_unlocked', true);
-            pm.gameState.flags.set('access_to_lyceum_granted', true); // For Lyceum Path
-            pm.gameState.flags.set('elman_rescued_and_talked', true); // For MQ001 progression
+            pm.gameState.flags.set('access_to_lyceum_granted', true); 
+            pm.gameState.flags.set('elman_rescued_and_talked', true); 
             eventBus.publish('uiNotification', { message: "The Study Hub in Sleepy Hollow is now accessible!", type: 'system highlight-color' });
         },
         isMainQuest: true,
-        autoStartConditions: (pm) => { // Conditions for this quest to auto-start
+        autoStartConditions: (pm) => { 
             return pm.gameState.currentLocationId === 'ruined_outpost_exterior' &&
                    pm.gameState.quests["main001_find_partner"] && !pm.gameState.quests["main001_find_partner"].completed &&
-                   !pm.gameState.quests["main002_scholars_plea"]; // Only if MQ001 is active and this one isn't
+                   !pm.gameState.quests["main002_scholars_plea"]; 
         }
     },
-    // --- SIDE QUESTS ---
     side001_lost_cat: {
         id: "side001_lost_cat",
         name: "Mittens, Come Home!",
@@ -82,12 +74,12 @@ export const QUESTS_DATA = {
             "Old Lady Gable was overjoyed to have Mittens back. She gave you a small reward."
         ],
         stages: [
-            { // Stage 0: Find Mittens (e.g. interaction near well, sets a flag 'found_mittens')
+            { 
                 objective: { type: "flag_set", flag: "found_mittens_cat" },
                 onCompleteMessage: "You spot a fluffy cat hiding near the well. It must be Mittens!"
             },
-            { // Stage 1: Talk to Old Lady Gable with Mittens (dialogue sets flag 'returned_mittens')
-                objective: { type: "dialogue_npc_stage", npcId: "old_lady_gable", dialogueStage: "return_cat" },
+            { 
+                objective: { type: "flag_set", flag: "returned_mittens_to_gable" }, // This flag should be set by dialogue interaction
                 onCompleteMessage: "Old Lady Gable is so happy!"
             }
         ],
@@ -99,15 +91,12 @@ export const QUESTS_DATA = {
             pm.gameState.flags.set("side001_lost_cat_completed", true);
         }
     },
-    // More side quests: e.g., clear spiders from cellar, deliver a package, etc.
 };
 
 
 class QuestManager {
     constructor() {
         eventBus.subscribe('locationChanged', () => this.checkAutoStartQuests());
-        // Listen for custom events that might advance quests
-        // eventBus.subscribe('customQuestEvent', ({eventName, eventData}) => this.handleCustomEvent(eventName, eventData));
     }
 
     startQuest(questId) {
@@ -132,13 +121,14 @@ class QuestManager {
         }
 
         eventBus.publish('playerDataUpdated', playerManager.getPublicData());
-        this.checkQuestObjective(questId);
+        this.checkQuestObjective(questId); // Check immediately if stage 0 objective is already met
     }
     
     getFormattedLogText(questData, stageIndex) {
         let text = (questData.log && questData.log[stageIndex]) ? questData.log[stageIndex] : "Objective details are currently unavailable.";
-        return text.replace(/\[PartnerName\]/g, playerManager.gameState.partnerName)
-                   .replace(/\[PlayerName\]/g, playerManager.gameState.name);
+        if (!playerManager || !playerManager.gameState) return text; // Guard against early calls
+        return text.replace(/\[PartnerName\]/g, playerManager.gameState.partnerName || "your partner")
+                   .replace(/\[PlayerName\]/g, playerManager.gameState.name || "Adventurer");
     }
 
     advanceQuestStage(questId) {
@@ -160,7 +150,7 @@ class QuestManager {
             const logText = this.getFormattedLogText(questData, questProgress.stage);
             eventBus.publish('addMessage', { text: `<strong>Quest Updated:</strong> ${questData.name}<br/><em>- ${logText}</em>`, type: 'system' });
             eventBus.publish('playerDataUpdated', playerManager.getPublicData());
-            this.checkQuestObjective(questId); // Check next stage immediately
+            this.checkQuestObjective(questId); 
         }
     }
 
@@ -183,7 +173,9 @@ class QuestManager {
                     rewardText += `${ITEMS_DATA[itemRef.itemId]?.name || itemRef.itemId} (x${itemRef.quantity}), `;
                 });
             }
-            eventBus.publish('addMessage', { text: rewardText.slice(0, -2) + ".", type: 'system' });
+            if (rewardText !== "Rewards: ") { // Only show if there were rewards
+                 eventBus.publish('addMessage', { text: rewardText.slice(0, -2) + ".", type: 'system' });
+            }
         }
         
         if (typeof questData.onComplete === 'function') {
@@ -191,7 +183,7 @@ class QuestManager {
         }
 
         eventBus.publish('playerDataUpdated', playerManager.getPublicData());
-        this.checkAllQuestObjectives(); // Other quests might depend on this one
+        this.checkAllQuestObjectives(); 
     }
 
     checkQuestObjective(questId) {
@@ -205,8 +197,6 @@ class QuestManager {
         const objective = currentStageData.objective;
         let objectiveMet = false;
 
-        // Check if this specific objective within the stage was already met (for multi-objective stages if implemented)
-        // For now, assume one objective per stage.
         if (questProgress.objectivesMet[`stage_${questProgress.stage}`]) return;
 
 
@@ -220,26 +210,24 @@ class QuestManager {
             case "collect_item":
                 if (playerManager.hasItem(objective.itemId, objective.quantity)) {
                     objectiveMet = true;
-                    if (objective.removeItemOnCompletion) { // Optional: remove quest items
-                        // playerManager.removeItemByItemId(objective.itemId, objective.quantity); // Needs careful implementation for stacks/instances
-                    }
+                    // For now, quest items are not automatically removed unless explicitly handled by interaction.
                 }
                 break;
-            case "defeat_enemy_type": // e.g. { type: "defeat_enemy_type", enemyId: "goblin_scout", count: 3 }
-                // This requires tracking defeated enemies, more complex. Placeholder.
-                // if (playerManager.gameState.flags.get(`defeated_${objective.enemyId}_count`) >= objective.count) objectiveMet = true;
+            case "dialogue_npc_stage": 
+                // This is a placeholder; actual completion depends on a flag set by the dialogue interaction
+                // Example: `${objective.npcId}_${objective.dialogueStage}_done`
+                // For MQ002: flag "elman_the_scholar_post_rescue_thanks_done" should be set by InputParser on interaction.
+                // This objective type definition itself doesn't advance. The flag does.
+                // The check for this flag happens implicitly via "flag_set" type if that's how it's defined.
+                // Let's assume for "dialogue_npc_stage", we check for a conventionally named flag:
+                if (playerManager.gameState.flags.get(`${objective.npcId}_${objective.dialogueStage}_done`)) {
+                    objectiveMet = true;
+                }
                 break;
-            case "dialogue_npc_stage": // e.g. { type: "dialogue_npc_stage", npcId: "elman", dialogueStage: "post_rescue_thanks" }
-                // The dialogue system itself should set a specific flag like `flag: "elman_talked_post_rescue"`
-                // This objective type is more of a hint; actual check relies on a flag set by dialogue.
-                // For now, assume a flag like `${objective.npcId}_${objective.dialogueStage}_done` is set.
-                if (playerManager.gameState.flags.get(`${objective.npcId}_${objective.dialogueStage}_done`)) objectiveMet = true;
-                break;
-            // Add more objective types: use_item_at_location, etc.
         }
 
         if (objectiveMet) {
-            questProgress.objectivesMet[`stage_${questProgress.stage}`] = true; // Mark this objective as met
+            questProgress.objectivesMet[`stage_${questProgress.stage}`] = true; 
             this.advanceQuestStage(questId);
         }
     }
@@ -253,7 +241,7 @@ class QuestManager {
     checkAutoStartQuests() {
         for (const questId in QUESTS_DATA) {
             const questData = QUESTS_DATA[questId];
-            if (questData.autoStartConditions && !playerManager.gameState.quests[questId]) { // Not started or completed
+            if (questData.autoStartConditions && !playerManager.gameState.quests[questId]) { 
                 if (questData.autoStartConditions(playerManager)) {
                     this.startQuest(questId);
                 }
@@ -270,7 +258,7 @@ class QuestManager {
             if (questData && !questProgress.completed) {
                 activeQuestFound = true;
                 const stageDesc = this.getFormattedLogText(questData, questProgress.stage);
-                logOutput += `<details><summary><strong>${questData.name}</strong></summary><p style="margin-left:1em;">${stageDesc}</p></details>`;
+                logOutput += `<details open><summary><strong>${questData.name}</strong></summary><p style="margin-left:1em;">${stageDesc}</p></details>`;
             }
         }
         if (!activeQuestFound) {
@@ -279,11 +267,10 @@ class QuestManager {
         eventBus.publish('addMessage', { text: logOutput, type: 'system-message' });
     }
 
-    // Called by dialogue system or other game events
-    setQuestFlag(flagName) {
-        playerManager.gameState.flags.set(flagName, true);
-        this.checkAllQuestObjectives(); // Re-check all quests as a flag might progress one
-        eventBus.publish('uiNotification', {text: `(Quest flag set: ${flagName})`, type:'debug-system'}); // Optional debug
+    setQuestFlag(flagName, value = true) { // Allow setting flag to true or false
+        playerManager.gameState.flags.set(flagName, value);
+        this.checkAllQuestObjectives(); 
+        // eventBus.publish('uiNotification', {text: `(Quest flag ${flagName} set to ${value})`, type:'debug-system'}); 
     }
 }
 
