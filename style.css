@@ -492,3 +492,14 @@ button.danger:hover {
 ::-webkit-scrollbar-thumb:hover {
     background: #d89a4e;
 }
+/* style.css - add at the end or in a relevant section */
+.button-glow-continue {
+    /* Example: Gold glow */
+    box-shadow: 0 0 8px var(--accent-color), 0 0 12px var(--accent-color), 0 0 16px var(--glow-color-accent);
+    /* You might need to adjust existing button shadows or use !important if it conflicts */
+}
+
+.button-glow-new {
+    /* Example: Info glow */
+    box-shadow: 0 0 8px var(--highlight-color), 0 0 12px var(--highlight-color), 0 0 16px var(--glow-color-info);
+}
