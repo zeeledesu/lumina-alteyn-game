@@ -25,9 +25,9 @@ class UIManager {
         this.introOverlay = document.getElementById('intro-overlay');
         this.introTextLine1 = document.getElementById('intro-text-line1');
         this.introTextLine2 = document.getElementById('intro-text-line2');
-        this.skipIntroButton = document.getElementById('skip-intro-button');
+        // this.skipIntroButton = document.getElementById('skip-intro-button'); // Removed
 
-        // Sidebar Elements... (rest of constructor is the same)
+        // Sidebar Elements
         this.playerNameDisplay = document.getElementById('player-name-display');
         this.playerLevel = document.getElementById('player-level');
         this.playerXp = document.getElementById('player-xp');
@@ -94,15 +94,17 @@ class UIManager {
         eventBus.subscribe('combatEnded', (result) => this.teardownCombatUI(result));
         eventBus.subscribe('combatUiUpdate', (combatState) => this.updateCombatantsUI(combatState));
         eventBus.subscribe('combatTurnAdvanced', ({ currentTurnActor, combatState }) => this.highlightCurrentTurnActor(currentTurnActor, combatState));
-        eventBus.subscribe('playerTurnStarted', ({combatState, retry}) => this.showPlayerCombatActions(combatState, retry));
+        eventBus.subscribe('playerTurnStarted', (data) => this.showPlayerCombatActions(data.combatState, data.retry, data.isAllyTurn, data.allyActor));
         eventBus.subscribe('combatRequestTarget', (data) => this.promptForTarget(data.targetableEntities, data.actionMessage));
         eventBus.subscribe('combatLog', (logEntry) => this.addCombatLogMessage(logEntry));
 
         eventBus.subscribe('sansanProposalAttempt', () => this.showSansanProposalModal());
+        eventBus.subscribe('specialIntroCutiepatotie', (data) => this.displayCutiepatotieIntro(data));
+
 
         this.submitButton.addEventListener('click', () => this.processInput());
         this.playerInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') this.processInput(); });
-        this.skipIntroButton.addEventListener('click', () => this.finishIntro(true)); // Pass true if skipped by button
+        // this.skipIntroButton.addEventListener('click', () => this.finishIntro(true)); // Removed
         this.modalOverlay.addEventListener('click', (e) => {
             if (e.target === this.modalOverlay && !this.modalContent.classList.contains('prevent-overlay-close')) {
                 this.hideModal();
@@ -117,52 +119,43 @@ class UIManager {
 
     async startAnimatedIntro() {
         this.introOverlay.classList.remove('hidden');
-        this.skipIntroButton.classList.add('hidden'); // Hide initially
         
-        // Reset text content for CSS animation
         this.introTextLine1.textContent = "The Twin Stars, Sansan and Teyang...";
         this.introTextLine2.textContent = "Shattered Vyraknos' Obsidian Throne.";
 
-        // Ensure CSS animations are reset if this intro is replayed
         this.introTextLine1.style.animation = 'none';
         this.introTextLine2.style.animation = 'none';
-        this.skipIntroButton.style.animation = 'none';
-
-        // Trigger reflow to restart animation
         this.introTextLine1.offsetHeight; 
         this.introTextLine2.offsetHeight;
-        this.skipIntroButton.offsetHeight;
-
-        this.introTextLine1.style.animation = ''; // Re-apply default animation from CSS
+        this.introTextLine1.style.animation = ''; 
         this.introTextLine2.style.animation = '';
-        this.skipIntroButton.style.animation = '';
 
-
-        // Show skip button after a delay (e.g., after line 1 animation starts)
-        setTimeout(() => {
-            this.skipIntroButton.classList.remove('hidden');
-        }, 1600); // Delay matching roughly the end of line 1 animation + a bit
-
-        // Timeout to auto-skip if player doesn't interact
-        this.introTimeout = setTimeout(() => this.finishIntro(false), 9000); // Longer intro duration
+        this.introTimeout = setTimeout(() => this.finishIntro(), 7000); // Adjusted duration based on typical CSS animation length
     }
 
-    finishIntro(skippedByUser = false) {
+    finishIntro() {
         if (this.introTimeout) {
             clearTimeout(this.introTimeout);
             this.introTimeout = null; 
         }
         this.introOverlay.classList.add('hidden');
         
-        // Only show char creation if game isn't already loaded (e.g. player skipped intro but has a save)
         if (!playerManager.gameState.classId) { 
             this.showInitialTutorial();
             this.showCharacterCreationModal();
-        } else if (skippedByUser) {
-            // If skipped but game was already loaded/character exists, just ensure UI is correct
+        } else {
             this.refreshAllUI(playerManager.getPublicData());
             this.displayLocation(playerManager.gameState.currentLocationId, true);
         }
+    }
+
+    async displayCutiepatotieIntro(data) {
+        await utils.delay(700); // Allow welcome messages to appear first
+        this.addMessage("As you fully materialize in Lumina Field, a colossal, yet gentle, reptilian creature shimmers into existence beside you. Its warm, intelligent eyes fix on you with unwavering loyalty.", "lore-message", true, utils.CONFIG.DEFAULT_TEXT_SPEED + 10);
+        await utils.delay(100); 
+        this.addMessage(`<i>"I am here, my Cutiepatotie. Always. We will find our ${data.partnerName} together."</i>`, "sansan-chat", true, utils.CONFIG.DEFAULT_TEXT_SPEED + 10);
+        await utils.delay(100);
+        this.addMessage("It's Sansan, your devoted Dino Guardian, his essence intertwined with yours across the echoes of time.", "lore-message", true, utils.CONFIG.DEFAULT_TEXT_SPEED + 10);
     }
     
     showInitialTutorial() {
@@ -189,17 +182,16 @@ class UIManager {
         const messageElement = document.createElement('p');
         if (type) messageElement.classList.add(...type.split(' '));
 
-        if (useTyping && text) { // Added null/undefined check for text
+        if (useTyping && text) { 
             messageElement.classList.add('typing-effect');
             this.outputArea.appendChild(messageElement);
             this.outputArea.scrollTop = this.outputArea.scrollHeight;
             await utils.typeEffect(messageElement, text, charDelay || utils.CONFIG.DEFAULT_TEXT_SPEED, false); 
-        } else if (text) { // Added null/undefined check for text
-            messageElement.innerHTML = text;
+        } else if (text) { 
+            messageElement.innerHTML = text; // Use innerHTML to support bold etc.
             this.outputArea.appendChild(messageElement);
         } else {
-            // If text is empty/null, don't append empty p tag.
-            this.isTyping = false; // Still need to reset this
+            this.isTyping = false; 
             if (this.messageQueue.length > 0) {
                  await utils.delay(10); 
                  this.processMessageQueue();
@@ -221,12 +213,11 @@ class UIManager {
         }
     }
 
-    // ... rest of uiManager.js remains the same
     addCombatLogMessage(logEntry) {
         const p = document.createElement('p');
         p.classList.add('combat-text');
         if (logEntry.type) p.classList.add(...logEntry.type.split(' '));
-        p.innerHTML = logEntry.text;
+        p.innerHTML = logEntry.text; // Use innerHTML
         this.outputArea.appendChild(p);
         this.outputArea.scrollTop = this.outputArea.scrollHeight;
 
@@ -250,8 +241,8 @@ class UIManager {
 
     clearOutput() {
         this.outputArea.innerHTML = '';
-        this.messageQueue = []; // Clear the queue
-        this.isTyping = false; // Reset typing flag
+        this.messageQueue = []; 
+        this.isTyping = false; 
     }
 
     refreshAllUI(playerData) {
@@ -278,6 +269,7 @@ class UIManager {
         this.playerAttributesList.innerHTML = '';
         ATTRIBUTES.forEach(attr => {
             const attrData = playerData.attributes[attr];
+            if (!attrData) { console.warn(`Attribute ${attr} missing in playerData for UI refresh.`); return; }
             const li = document.createElement('li');
             li.innerHTML = `${utils.capitalize(attr)}: <strong>${attrData.current}</strong> <small>(B:${attrData.base}+A:${attrData.allocated}+Gear:${attrData.bonus})</small>`;
             this.playerAttributesList.appendChild(li);
@@ -294,13 +286,15 @@ class UIManager {
 
 
         this.playerSkillsSummary.innerHTML = '';
-        playerData.skills.slice(0, 5).forEach(skill => {
+        // Ensure skills are objects with names, not just IDs
+        const skillsToDisplay = Array.isArray(playerData.skills) ? playerData.skills.filter(s => s && s.name) : [];
+        skillsToDisplay.slice(0, 5).forEach(skill => {
             const li = document.createElement('li');
             li.textContent = skill.name;
             this.playerSkillsSummary.appendChild(li);
         });
-        if (playerData.skills.length > 5) this.playerSkillsSummary.innerHTML += `<li>...and ${playerData.skills.length - 5} more.</li>`;
-        if (playerData.skills.length === 0) this.playerSkillsSummary.innerHTML = `<li>No skills learned.</li>`;
+        if (skillsToDisplay.length > 5) this.playerSkillsSummary.innerHTML += `<li>...and ${skillsToDisplay.length - 5} more.</li>`;
+        if (skillsToDisplay.length === 0) this.playerSkillsSummary.innerHTML = `<li>No skills learned.</li>`;
 
         this.inventoryCount.textContent = playerData.inventory.length;
         this.inventoryMax.textContent = playerData.maxInventorySlots;
@@ -334,7 +328,7 @@ class UIManager {
             this.partyMembersSummary.innerHTML = '';
             playerData.allies.forEach(ally => {
                 const li = document.createElement('li');
-                li.innerHTML = `${ally.name} (Lvl ${ally.level}) - HP: ${ally.derivedStats.currentHp}/${ally.derivedStats.maxHp}`;
+                li.innerHTML = `${ally.name} (Lvl ${ally.level}) - HP: ${ally.derivedStats.currentHp}/${ally.derivedStats.maxHp} ${ally.isPlayerControlled ? '(CTRL)' : ''}`;
                 this.partyMembersSummary.appendChild(li);
             });
         } else {
@@ -366,7 +360,7 @@ class UIManager {
                 if (interact.condition && !interact.condition(playerManager)) return;
                 interactionButtons.push({
                     text: interact.name,
-                    command: `${interact.action || 'interact'} ${interact.id}`
+                    command: `interact ${interact.id}` // Standardized command
                 });
             });
         }
@@ -380,8 +374,8 @@ class UIManager {
             const button = document.createElement('button');
             button.textContent = buttonInfo.text;
             button.addEventListener('click', () => {
-                this.addMessage(`> ${buttonInfo.text}`, 'player-command');
-                eventBus.publish('parseInput', buttonInfo.command);
+                this.addMessage(`> ${buttonInfo.text}`, 'player-command'); // Echo button text
+                eventBus.publish('parseInput', buttonInfo.command); // Send standardized command
             });
             this.actionButtonsContainer.appendChild(button);
         });
@@ -442,13 +436,15 @@ class UIManager {
         html += `</select>`;
         html += `<p style="margin-top:15px;">You will begin with <strong>${INITIAL_ATTRIBUTE_POINTS}</strong> attribute points to allocate.</p>`;
         
-        const actions = [{ text: "Begin Your Journey", className: "primary", callback: () => {
+        const actions = [{ text: "Begin Your Journey", className: "primary", callback: async () => {
             const name = document.getElementById('char-name').value.trim() || "Adventurer";
             const gender = document.getElementById('char-gender').value;
             const classId = document.getElementById('char-class').value;
             
+            this.hideModal(); // Hide modal first
+            await utils.delay(100); // Allow modal to hide
+
             playerManager.setupNewCharacter(name, gender, classId);
-            this.hideModal();
             this.addMessage(`Welcome, ${name} the ${PLAYER_CLASSES[classId].name}. Your quest to find ${playerManager.gameState.partnerName} begins.`, "system-message highlight-color");
             eventBus.publish('parseInput', `quest start main001_find_partner`);
         }}];
@@ -460,6 +456,31 @@ class UIManager {
         
         const charNameInput = document.getElementById('char-name');
         if (charNameInput) charNameInput.focus();
+
+        // Animate modal elements
+        const modalBody = this.modalContent.querySelector('.modal-body-content');
+        if (modalBody) {
+            const elementsToAnimate = Array.from(modalBody.children);
+            elementsToAnimate.forEach((el, index) => {
+                el.style.opacity = '0';
+                el.style.transform = 'translateY(10px)';
+                el.style.transition = 'opacity 0.3s ease-out 0.1s, transform 0.3s ease-out 0.1s'; // Added small base delay
+                el.style.transitionDelay = `${index * 0.05 + 0.1}s`; // Stagger + base delay
+                void el.offsetWidth; 
+                el.style.opacity = '1';
+                el.style.transform = 'translateY(0)';
+            });
+            const actionButtons = this.modalContent.querySelectorAll('.modal-actions button');
+            actionButtons.forEach((btn, index) => {
+                btn.style.opacity = '0';
+                btn.style.transform = 'translateY(10px)';
+                btn.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
+                btn.style.transitionDelay = `${(elementsToAnimate.length + index) * 0.05 + 0.1}s`;
+                void btn.offsetWidth;
+                btn.style.opacity = '1';
+                btn.style.transform = 'translateY(0)';
+            });
+        }
     }
 
     handleLevelUpUI(levelUpData) {
@@ -565,7 +586,9 @@ class UIManager {
                             <p>${item.description}</p>`;
                 if (item.type === 'consumable' || (item.type === 'weapon' || item.type === 'armor' || item.type === 'accessory')) {
                      html += `<div class="item-actions">`;
-                    if (item.type === 'consumable' && item.use_effect) html += `<button class="use-item-btn" data-iteminstanceid="${item.instanceId}">Use</button>`;
+                    if (item.type === 'consumable' && item.use_effect && item.use_effect.target !== 'non_combat' && item.use_effect.type !== 'grant_sp') { // Check if usable in/out of combat
+                        html += `<button class="use-item-btn" data-iteminstanceid="${item.instanceId}">Use</button>`;
+                    }
                     if (item.type === 'weapon' || item.type === 'armor' || item.type === 'accessory') {
                          const isEquipped = Object.values(playerData.equipment).some(eq => eq && eq.instanceId === item.instanceId);
                          if (isEquipped) {
@@ -587,7 +610,13 @@ class UIManager {
         document.querySelectorAll('.use-item-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const itemInstanceId = e.target.dataset.iteminstanceid;
-                eventBus.publish('parseInput', `use ${itemInstanceId}`); 
+                // Check if in combat; if so, this action closes the modal and queues the item use
+                // If not in combat, 'use' command handles it.
+                if (playerManager.gameState.inCombat) {
+                     this.addMessage("Item use in combat needs to be done via combat actions.", "warning-message");
+                } else {
+                    eventBus.publish('parseInput', `use ${itemInstanceId}`); 
+                }
                 this.showInventoryModal(); 
             });
         });
@@ -628,9 +657,19 @@ class UIManager {
             html += `<div class="equipment-slot-entry">
                         <h4>${utils.capitalize(slot.replace(/([A-Z])/g, ' $1'))}</h4>`;
             if (equippedItem) {
-                html += `<p><span class="item-${equippedItem.rarity || 'common'}">${equippedItem.icon || ''} ${equippedItem.name}</span></p>
-                         <p><small>${equippedItem.description}</small></p>
-                         <button class="unequip-from-slot-btn" data-slot="${slot}">Unequip</button>`;
+                // Check if this item is a two-handed weapon and if the current slot is 'offHand' being "covered" by it.
+                let isTwoHandedCoverSlot = false;
+                if (slot === 'offHand' && playerData.equipment.weapon?.itemId === equippedItem.itemId && ITEMS_DATA[equippedItem.itemId]?.slot === 'twoHand') {
+                    isTwoHandedCoverSlot = true;
+                }
+
+                html += `<p><span class="item-${equippedItem.rarity || 'common'}">${equippedItem.icon || ''} ${equippedItem.name}</span> ${isTwoHandedCoverSlot ? "<small>(2H)</small>" : ""}</p>
+                         <p><small>${equippedItem.description}</small></p>`;
+                if (!isTwoHandedCoverSlot) { // Don't allow unequipping the "ghost" 2H item from offHand slot
+                    html += `<button class="unequip-from-slot-btn" data-slot="${slot}">Unequip</button>`;
+                } else {
+                    html += `<p><small><em>Covered by Two-Handed Weapon</em></small></p>`;
+                }
             } else {
                 html += `<p><em>Empty</em></p>
                          <button class="equip-to-slot-btn" data-slot="${slot}">Equip Item</button>`;
@@ -713,6 +752,7 @@ class UIManager {
         html += `<h3>Attributes (${playerData.attributePoints} points available)</h3><div class="char-sheet-section">`;
         ATTRIBUTES.forEach(attr => {
             const attrData = playerData.attributes[attr];
+             if (!attrData) { console.warn(`Attribute ${attr} missing for Char Sheet.`); return; }
             html += `<p>${utils.capitalize(attr)}: <strong>${attrData.current}</strong> (Base: ${attrData.base}, Allocated: ${attrData.allocated}, Gear: ${attrData.bonus})</p>`;
         });
         if (playerData.attributePoints > 0) html += `<button id="cs-alloc-attr">Allocate Points</button>`;
@@ -771,7 +811,7 @@ class UIManager {
         let html = `<div class="text-center">
                         <p>Sansan gets down on one knee, his large dino eyes sparkling with emotion. He holds out a small, intricately carved box. Inside, a beautiful ring glows with a soft, warm light.</p>
                         <p>"Cutiepatotie... my love, my life... Will you be my forever?"</p>
-                        <img src="placeholder_dino_proposal.png" alt="Sansan Proposing" style="max-width:200px; margin:15px auto; display:block; border-radius: var(--border-radius);">
+                        <img src="assets/dino_proposal.png" alt="Sansan Proposing" style="max-width:200px; margin:15px auto; display:block; border-radius: var(--border-radius);">
                         <p><small>(Warning: Accepting this ring will permanently bind it to you.)</small></p>
                     </div>`;
         const actions = [
@@ -785,7 +825,7 @@ class UIManager {
                 this.hideModal();
             }},
             { text: "I... I can't right now, Sansan.", callback: () => {
-                playerManager.gameState.sansanDialogue.proposalStage = -1;
+                playerManager.gameState.sansanDialogue.proposalStage = -1; // Mark as declined/postponed
                 playerManager.gameState.sansanDialogue.promptActive = null;
                 eventBus.publish('addMessage', {text: "Sansan's eyes dim, his posture slumping. 'I... understand.' He slowly gets up, the light from the ring fading slightly.", type: "sansan-chat"});
                 this.hideModal();
@@ -794,7 +834,6 @@ class UIManager {
         this.showGenericModal("A Dino's Proposal", html, actions, "proposal-modal", true);
     }
 
-    // --- COMBAT UI ---
     setupCombatUI(combatState) {
         this.mainContentArea.classList.add('hidden');
         this.combatUiContainer.classList.remove('hidden');
@@ -821,6 +860,7 @@ class UIManager {
         } else if (result.fled) {
             this.addMessage("You managed to escape.", "system-message");
         }
+        // Game over message is handled by gameOver event if not fled and lost
         this.refreshAllUI(playerManager.getPublicData());
         this.displayLocation(playerManager.gameState.currentLocationId, true);
     }
@@ -836,9 +876,6 @@ class UIManager {
             if (member.stats.currentHp > 0) this.playerPartyDisplayCombat.appendChild(this.createCombatantCard(member, true, combatState.currentActorInstanceId === member.instanceId));
         });
         
-        // This refreshAllUI might be redundant if combat state doesn't directly affect non-combat sidebar much,
-        // but good for keeping HP/MP up-to-date if they were separate.
-        // For now, playerManager.getPublicData() gets fresh data anyway.
         this.refreshAllUI(playerManager.getPublicData()); 
     }
 
@@ -852,8 +889,9 @@ class UIManager {
 
         if(isCurrentTurn) card.classList.add('current-turn');
 
+        const nameSuffix = combatant.isPlayerControlled && combatant.isAlly ? " (CTRL)" : "";
         card.innerHTML = `
-            <h4>${combatant.name} (L${combatant.level || playerManager.gameState.level})</h4>
+            <h4>${combatant.name}${nameSuffix} (L${combatant.level || playerManager.gameState.level})</h4>
             <div class="hp-bar"><div class="hp-bar-inner" style="width: ${Math.max(0,(combatant.stats.currentHp / combatant.maxStats.maxHp) * 100)}%;"></div></div>
             <p><small>HP: ${combatant.stats.currentHp}/${combatant.maxStats.maxHp}</small></p>
             ${(combatant.isPlayer || combatant.isAlly) ? `<p><small>MP: ${combatant.stats.currentMp}/${combatant.maxStats.maxMp}</small></p>` : ''}
@@ -866,7 +904,7 @@ class UIManager {
                 const seSpan = document.createElement('span');
                 seSpan.className = `status-icon ${seData.type === 'buff' ? 'buff' : 'debuff'}`;
                 seSpan.title = `${seData.name} (${seInstance.duration} turns left)`;
-                seSpan.textContent = seData.name.substring(0,3).toUpperCase();
+                seSpan.textContent = seData.icon || seData.name.substring(0,3).toUpperCase(); // Use icon if available
                 statusDisplay.appendChild(seSpan);
             }
         });
@@ -875,29 +913,32 @@ class UIManager {
             let canTargetThis = false;
             const actionType = combatManager.pendingPlayerAction.type;
             const detailId = combatManager.pendingPlayerAction.detailId;
+            const currentActor = combatManager.currentActor;
 
-            if (actionType === 'attack') {
-                if (!isPlayerSide) canTargetThis = true; // Can attack enemies
+            if (actionType === 'attack') { // Player/Ally attacking enemy
+                if (!isPlayerSide) canTargetThis = true;
             } else if (actionType === 'skill') {
                 const skillData = SKILLS_DATA[detailId];
-                if (skillData) {
+                if (skillData) { // Check if target definition matches this combatant card
                     if (skillData.target.includes('enemy') && !isPlayerSide) canTargetThis = true;
-                    if ((skillData.target.includes('ally') || skillData.target === 'self' || skillData.target === 'party' || skillData.target === 'ally_leader') && isPlayerSide) canTargetThis = true;
+                    if ((skillData.target.includes('ally') || skillData.target === 'party' || skillData.target === 'ally_leader') && isPlayerSide) canTargetThis = true;
+                    if (skillData.target === 'self' && combatant.instanceId === currentActor.instanceId) canTargetThis = true;
                 }
             } else if (actionType === 'item') {
+                // Only player uses items, can target allies or enemies
                 const itemRef = playerManager.gameState.inventory.find(i => i.instanceId === detailId);
                 const itemData = itemRef ? ITEMS_DATA[itemRef.itemId] : null;
                 if (itemData && itemData.use_effect) {
                     const effectTarget = itemData.use_effect.target;
                     if (effectTarget === 'enemy_single' && !isPlayerSide) canTargetThis = true;
-                    if ((effectTarget === 'ally_single' || effectTarget === 'self_or_ally' || effectTarget === 'self') && isPlayerSide) canTargetThis = true;
+                    if ((effectTarget === 'ally_single' || effectTarget === 'self_or_ally') && isPlayerSide) canTargetThis = true;
+                    if (effectTarget === 'self' && combatant.instanceId === currentActor.instanceId && currentActor.isPlayer) canTargetThis = true;
                 }
             }
             
             if (canTargetThis) {
                 card.classList.add('targetable');
                 card.addEventListener('click', () => {
-                    // combatManager.playerSelectsTarget(combatant.instanceId); // Directly call here
                     eventBus.publish('playerSelectedCombatTarget', combatant.instanceId);
                 });
             }
@@ -909,38 +950,45 @@ class UIManager {
         this.updateCombatantsUI(combatState); 
     }
 
-    showPlayerCombatActions(combatState, retry = false) {
+    showPlayerCombatActions(combatState, retry = false, isAllyTurn = false, allyActor = null) {
         this.targetSelectionPrompt.classList.add('hidden');
         this.combatActionButtons.innerHTML = '';
-        const player = combatState.playerParty.find(p => p.isPlayer);
-        if (!player || player.stats.currentHp <= 0) return;
+        
+        const currentActorForActions = isAllyTurn ? allyActor : combatState.playerParty.find(p => p.isPlayer);
+        if (!currentActorForActions || currentActorForActions.stats.currentHp <= 0) return;
 
         if (retry) this.addMessage("Action failed or canceled. Please choose another action.", "warning-message");
+
+        this.addMessage(`<strong>${currentActorForActions.name}'s turn.</strong> Choose an action.`, "system-message");
 
         const actions = [
             { text: "Attack", commandType: 'attack', detailId: null },
             { text: "Skills", commandType: 'show_skills', detailId: null },
-            { text: "Items", commandType: 'show_items', detailId: null },
-            { text: "Flee", commandType: 'flee', detailId: null },
-            { text: "Pass", commandType: 'pass', detailId: null },
         ];
+
+        if (currentActorForActions.isPlayer) { // Only player can use items or flee for now
+            actions.push({ text: "Items", commandType: 'show_items', detailId: null });
+            actions.push({ text: "Flee", commandType: 'flee', detailId: null });
+        }
+        actions.push({ text: "Pass", commandType: 'pass', detailId: null });
+
 
         actions.forEach(actionInfo => {
             const button = document.createElement('button');
             button.textContent = actionInfo.text;
             button.addEventListener('click', () => {
                 if (actionInfo.commandType === 'show_skills') {
-                    this.showPlayerCombatSkillSelection(player, combatState);
+                    this.showPlayerCombatSkillSelection(currentActorForActions, combatState);
                 } else if (actionInfo.commandType === 'show_items') {
-                    this.showPlayerCombatItemSelection(player, combatState);
+                    // This should only be available if currentActorForActions is the main player
+                    if (currentActorForActions.isPlayer) {
+                        this.showPlayerCombatItemSelection(currentActorForActions, combatState);
+                    }
                 } else {
-                    // For attack, item, skill (if directly chosen without sub-menu),
-                    // combatManager.playerInitiatesTargetedAction handles target prompting.
-                    // For flee/pass, directly publish combatAction.
                     if (actionInfo.commandType === 'attack' || actionInfo.commandType === 'skill' || actionInfo.commandType === 'item') {
                         combatManager.playerInitiatesTargetedAction(actionInfo.commandType, actionInfo.detailId);
                     } else {
-                        eventBus.publish('combatAction', { type: actionInfo.commandType, casterId: player.instanceId });
+                        eventBus.publish('combatAction', { type: actionInfo.commandType, casterId: currentActorForActions.instanceId });
                     }
                 }
             });
@@ -948,22 +996,26 @@ class UIManager {
         });
     }
 
-    showPlayerCombatSkillSelection(player, combatState) {
+    showPlayerCombatSkillSelection(actorForActions, combatState) { // actorForActions can be player or controlled ally
         this.combatActionButtons.innerHTML = '';
-        const availableSkills = playerManager.getPublicData().skills;
+        
+        // Get skills for the current actor (player or controlled ally)
+        const skillsForActor = actorForActions.isPlayer ? playerManager.getPublicData().skills : 
+                              (actorForActions.isAlly ? actorForActions.skills.map(id => SKILLS_DATA[id]) : []);
 
-        if (availableSkills.length === 0) {
-            this.addMessage("You have no skills to use!", "warning-message");
-            this.showPlayerCombatActions(combatState, true);
+
+        if (skillsForActor.length === 0) {
+            this.addMessage(`${actorForActions.name} has no skills to use!`, "warning-message");
+            this.showPlayerCombatActions(combatState, true, actorForActions.isAlly, actorForActions.isAlly ? actorForActions : null);
             return;
         }
         
-        availableSkills.forEach(skill => { 
+        skillsForActor.forEach(skill => { 
             const skillData = SKILLS_DATA[skill.id]; 
             if (!skillData) return;
             const button = document.createElement('button');
             button.textContent = `${skillData.name} (MP: ${skillData.mpCost || 0})`;
-            if (player.stats.currentMp < (skillData.mpCost || 0)) {
+            if (actorForActions.stats.currentMp < (skillData.mpCost || 0)) {
                 button.disabled = true;
                 button.title = "Not enough MP";
             }
@@ -977,11 +1029,11 @@ class UIManager {
         const backButton = document.createElement('button');
         backButton.textContent = "Back to Actions";
         backButton.classList.add("secondary");
-        backButton.addEventListener('click', () => this.showPlayerCombatActions(combatState));
+        backButton.addEventListener('click', () => this.showPlayerCombatActions(combatState, false, actorForActions.isAlly, actorForActions.isAlly ? actorForActions : null));
         this.combatActionButtons.appendChild(backButton);
     }
 
-    showPlayerCombatItemSelection(player, combatState) {
+    showPlayerCombatItemSelection(playerActor, combatState) { // Only player can use items
         this.combatActionButtons.innerHTML = '';
         const usableItems = playerManager.getPublicData().inventory.filter(item => {
             return item.use_effect && (item.use_effect.target !== 'non_combat' && item.use_effect.type !== 'grant_sp');
@@ -989,7 +1041,7 @@ class UIManager {
 
         if (usableItems.length === 0) {
             this.addMessage("No usable items in combat.", "warning-message");
-            this.showPlayerCombatActions(combatState, true);
+            this.showPlayerCombatActions(combatState, true); // isAllyTurn is false, allyActor is null
             return;
         }
 
@@ -1005,43 +1057,43 @@ class UIManager {
         const backButton = document.createElement('button');
         backButton.textContent = "Back to Actions";
         backButton.classList.add("secondary");
-        backButton.addEventListener('click', () => this.showPlayerCombatActions(combatState));
+        backButton.addEventListener('click', () => this.showPlayerCombatActions(combatState)); // isAllyTurn is false, allyActor is null
         this.combatActionButtons.appendChild(backButton);
     }
 
     promptForTarget(targetableEntities, actionMessage) {
-        this.combatActionButtons.innerHTML = ''; // Clear previous action buttons
+        this.combatActionButtons.innerHTML = ''; 
         this.targetSelectionPrompt.textContent = actionMessage || "Select target:";
         this.targetSelectionPrompt.classList.remove('hidden');
         
-        // Re-render combatants to make them clickable if they are targetable
-        this.updateCombatantsUI(combatManager.getCombatState()); // This will make cards targetable
+        this.updateCombatantsUI(combatManager.getCombatState()); 
 
         const cancelButton = document.createElement('button');
         cancelButton.textContent = "Cancel Target";
         cancelButton.classList.add("danger");
         cancelButton.addEventListener('click', () => {
             this.targetSelectionPrompt.classList.add('hidden');
-            combatManager.cancelPlayerTargetSelection();
+            combatManager.cancelPlayerTargetSelection(); // Will re-show player actions
         });
-        this.combatActionButtons.appendChild(cancelButton); // Add cancel to the main action button area
+        this.combatActionButtons.appendChild(cancelButton); 
     }
 
 
-    showGameOver(reason) {
-        this.hideModal();
-        let html = `<p>${reason}</p><p>Your journey ends here... for now.</p>`;
+    showGameOver(data) { // data should be { reason: "..." }
+        this.hideModal(); // Hide any active modal
+        let html = `<p>${data.reason}</p><p>Your journey ends here... for now.</p>`;
         const actions = [
             { text: "Try Again (Load Last Save)", callback: () => {
                 this.hideModal();
-                eventBus.publish('parseInput', `load`);
+                eventBus.publish('parseInput', `load`); // Assuming 'load' command handles loading default/last save
             }},
             { text: "Start New Game", className:"danger", callback: () => {
                 this.hideModal();
                  eventBus.publish('requestNewGame');
             }}
         ];
-        this.showGenericModal("Game Over", html, "game-over-modal", true);
+        // Use a specific class for game over modal styling if needed
+        this.showGenericModal("Game Over", html, actions, "game-over-modal", true); // preventOverlayClose = true
     }
 }
 export const uiManager = new UIManager();
