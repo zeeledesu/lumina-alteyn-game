@@ -1,10 +1,14 @@
 // js/utils.js
 
 export const CONFIG = {
-    DEFAULT_TEXT_SPEED: 20, // ms per character (faster)
+    DEFAULT_TEXT_SPEED: 20, 
     FAST_TEXT_SPEED: 5,
-    INTRO_TEXT_SPEED: 50, // Slower for intro lore
-    GAME_OVER_DELAY: 5000, // ms before reload/reset on game over
+    INTRO_TEXT_SPEED: 50, 
+    GAME_OVER_DELAY: 5000, 
+    AI_THINK_DELAY: 1000, // ms for AI "thinking"
+    ACTION_ANIMATION_DELAY: 700, // ms for action text display before effect
+    POST_ACTION_DELAY: 300, // ms brief pause after action text/effect before next turn
+    MULTI_TARGET_EFFECT_DELAY: 200, // ms pause between effects on multiple targets
 };
 
 export function getRandomInt(min, max) {
@@ -26,29 +30,21 @@ export function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Improved type effect for a single element, character by character
 export async function typeEffect(element, text, charDelay = CONFIG.DEFAULT_TEXT_SPEED, clearExisting = true) {
     if (clearExisting) element.innerHTML = '';
+    if (!text) return; // Guard against null/undefined text
 
+    // Simple textContent update for general messages to avoid animation conflicts
+    // The intro sequence will rely solely on CSS for its animation.
     const chars = text.split('');
     for (let i = 0; i < chars.length; i++) {
-        const span = document.createElement('span');
-        span.textContent = chars[i];
-        span.style.opacity = '0'; // Start invisible
-        element.appendChild(span);
-
-        // Simple sequential fade-in, could be more complex with requestAnimationFrame
-        await delay(charDelay / 2); // Small delay before fade-in starts
-        span.style.transition = `opacity ${charDelay / 1000 * 2}s ease-in-out`;
-        span.style.opacity = '1';
-        
-        if (chars[i] !== ' ') { // Only "pause" for actual characters
+        element.textContent += chars[i];
+        if (chars[i] !== ' ') { 
             await delay(charDelay);
         }
     }
 }
 
-// Animate text by revealing words or phrases - good for titles or short messages
 export async function animateText(element, text, wordDelay = 150, clearExisting = true) {
     if (clearExisting) element.innerHTML = '';
     const words = text.split(' ');
@@ -66,7 +62,6 @@ export async function animateText(element, text, wordDelay = 150, clearExisting 
     }
 }
 
-// Generate a simple unique ID
 export function generateId(prefix = 'id_') {
     return prefix + Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
 }
