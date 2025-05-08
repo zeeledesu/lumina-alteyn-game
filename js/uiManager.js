@@ -3,10 +3,15 @@ import { eventBus } from './eventManager.js';
 import { playerManager } from './playerManager.js';
 import { worldManager } from './worldManager.js';
 import { combatManager } from './combatManager.js';
-import { PLAYER_CLASSES, ATTRIBUTES, DERIVED_STATS_PLAYER } from './data/classes.js';
+// Import INITIAL_ATTRIBUTE_POINTS directly if it's a constant and needed early.
+// However, it's better to get dynamic values from the responsible manager.
+import { PLAYER_CLASSES, ATTRIBUTES, DERIVED_STATS_PLAYER, INITIAL_ATTRIBUTE_POINTS } from './data/classes.js';
 import { SKILLS_DATA, SKILL_TREES_META, STATUS_EFFECTS_DATA } from './data/skills.js';
 import { ITEMS_DATA, EQUIPMENT_SLOTS } from './data/items.js';
 import * as utils from './utils.js';
+// questManager needs to be imported to use its helper getFormattedLogText
+import { questManager } from './questManager.js';
+
 
 class UIManager {
     constructor() {
@@ -110,19 +115,22 @@ class UIManager {
     
     startNewGameSequence() {
         this.clearOutput();
-        // playerManager.resetGameState(); // Reset state before showing intro
         this.startAnimatedIntro();
     }
 
     async startAnimatedIntro() {
         this.introOverlay.classList.remove('hidden');
         this.skipIntroButton.classList.add('hidden');
-        this.introTextLine1.innerHTML = ''; // Clear previous
+        this.introTextLine1.innerHTML = ''; 
         this.introTextLine2.innerHTML = '';
 
-        await utils.animateText(this.introTextLine1, "The Twin Stars, Sansan and Teyang...", utils.CONFIG.INTRO_TEXT_SPEED * 2);
+        // Use typeEffect for a cleaner animation for the intro lines
+        this.introTextLine1.style.opacity = 1; // Ensure parent is visible
+        this.introTextLine2.style.opacity = 1;
+
+        await utils.typeEffect(this.introTextLine1, "The Twin Stars, Sansan and Teyang...", utils.CONFIG.INTRO_TEXT_SPEED * 1.5, true);
         await utils.delay(700);
-        await utils.animateText(this.introTextLine2, "Shattered Vyraknos' Obsidian Throne.", utils.CONFIG.INTRO_TEXT_SPEED * 2);
+        await utils.typeEffect(this.introTextLine2, "Shattered Vyraknos' Obsidian Throne.", utils.CONFIG.INTRO_TEXT_SPEED * 1.5, true);
         await utils.delay(1200);
         this.skipIntroButton.classList.remove('hidden');
 
@@ -130,16 +138,19 @@ class UIManager {
     }
 
     finishIntro() {
-        if (this.introTimeout) clearTimeout(this.introTimeout);
+        if (this.introTimeout) {
+            clearTimeout(this.introTimeout);
+            this.introTimeout = null; // Clear the timeout ID
+        }
         this.introOverlay.classList.add('hidden');
-        if (!playerManager.gameState.classId) { // Only show tutorial & creation if not already loaded into a game
+        if (!playerManager.gameState.classId) { 
             this.showInitialTutorial();
             this.showCharacterCreationModal();
         }
     }
     
     showInitialTutorial() {
-        this.addMessage("<strong>Welcome to Lumina Alteyn!</strong>", "system-message highlight-color", false); // Non-typed for speed
+        this.addMessage("<strong>Welcome to Lumina Alteyn!</strong>", "system-message highlight-color", false);
         this.addMessage("Use commands like '<strong>go north</strong>' (or '<strong>n</strong>'), '<strong>look</strong>' (or '<strong>l</strong>'), '<strong>interact [target]</strong>'.", "system-message", false);
         this.addMessage("Type '<strong>help</strong>' at any time for a list of commands.", "system-message", false);
         this.addMessage("Your adventure begins...", "lore-message", true, utils.CONFIG.DEFAULT_TEXT_SPEED);
@@ -166,7 +177,7 @@ class UIManager {
             messageElement.classList.add('typing-effect');
             this.outputArea.appendChild(messageElement);
             this.outputArea.scrollTop = this.outputArea.scrollHeight;
-            await utils.typeEffect(messageElement, text, charDelay || utils.CONFIG.DEFAULT_TEXT_SPEED);
+            await utils.typeEffect(messageElement, text, charDelay || utils.CONFIG.DEFAULT_TEXT_SPEED, false); // Pass false for clearExisting
         } else {
             messageElement.innerHTML = text;
             this.outputArea.appendChild(messageElement);
@@ -174,6 +185,8 @@ class UIManager {
         this.outputArea.scrollTop = this.outputArea.scrollHeight;
         this.isTyping = false;
         if (this.messageQueue.length > 0) {
+            // Add a small delay before processing next message to prevent race conditions with isTyping flag
+            await utils.delay(10); 
             this.processMessageQueue();
         }
     }
@@ -193,7 +206,7 @@ class UIManager {
         this.outputArea.appendChild(p);
         this.outputArea.scrollTop = this.outputArea.scrollHeight;
 
-        if (logEntry.targetId && (logEntry.value || logEntry.statusName)) {
+        if (logEntry.targetId && (typeof logEntry.value !== 'undefined' || logEntry.statusName)) {
             const targetCard = document.querySelector(`.combatant-card[data-instanceid="${logEntry.targetId}"]`);
             if (targetCard) {
                 const floatText = document.createElement('div');
@@ -213,12 +226,15 @@ class UIManager {
 
     clearOutput() {
         this.outputArea.innerHTML = '';
-        this.messageQueue = [];
-        this.isTyping = false;
+        this.messageQueue = []; // Clear the queue
+        this.isTyping = false; // Reset typing flag
     }
 
     refreshAllUI(playerData) {
-        if (!playerData || !playerData.attributes) return;
+        if (!playerData || !playerData.attributes) {
+            console.warn("refreshAllUI called with invalid playerData:", playerData);
+            return;
+        }
 
         this.playerNameDisplay.textContent = playerData.name;
         this.playerLevel.textContent = playerData.level;
@@ -244,12 +260,15 @@ class UIManager {
         });
 
         this.playerEquipmentSummary.innerHTML = '';
-        for (const slot in playerData.equipment) {
+        // Ensure EQUIPMENT_SLOTS.player is defined and an array
+        const playerSlots = EQUIPMENT_SLOTS.player || Object.keys(playerData.equipment);
+        playerSlots.forEach(slot => {
             const item = playerData.equipment[slot];
             const li = document.createElement('li');
             li.innerHTML = `${utils.capitalize(slot.replace(/([A-Z])/g, ' $1'))}: <span class="item-${item?.rarity || 'common'}">${item ? (item.icon ? item.icon + ' ' : '') + item.name : 'Empty'}</span>`;
             this.playerEquipmentSummary.appendChild(li);
-        }
+        });
+
 
         this.playerSkillsSummary.innerHTML = '';
         playerData.skills.slice(0, 5).forEach(skill => {
@@ -275,19 +294,18 @@ class UIManager {
         let activeQuestCount = 0;
         for (const questId in playerData.quests) {
             const questProgress = playerData.quests[questId];
-            const questData = QUESTS_DATA[questId]; // Assuming QUESTS_DATA is available or imported
+            const questData = QUESTS_DATA[questId];
             if (questData && !questProgress.completed) {
                 activeQuestCount++;
                 const li = document.createElement('li');
-                const stageDesc = questManager.getFormattedLogText(questData, questProgress.stage); // Use questManager's helper
+                const stageDesc = questManager.getFormattedLogText(questData, questProgress.stage);
                 li.innerHTML = `<strong>${questData.name}</strong>: ${stageDesc.length > 40 ? stageDesc.substring(0, 37) + "..." : stageDesc}`;
-                li.title = stageDesc; // Full description on hover
+                li.title = stageDesc;
                 this.questLog.appendChild(li);
             }
         }
         if (activeQuestCount === 0) this.questLog.innerHTML = '<li>No active quests.</li>';
         
-        // Party Info Sidebar
         if (playerData.allies && playerData.allies.length > 0) {
             this.partyInfoSidebar.classList.remove('hidden');
             this.partyMembersSummary.innerHTML = '';
@@ -307,18 +325,16 @@ class UIManager {
             this.addMessage("Error: Unknown location.", "error-message"); return;
         }
 
-        if (!forceRedisplay) { // Only clear and add title/desc if not a forced refresh for interactions
-            this.clearOutput(); // Clear previous location's output
-            this.addMessage(`<strong>${location.name}</strong>`, 'location-title', false); // Non-typed title
-            this.addMessage(location.description, 'location-description', true, utils.CONFIG.DEFAULT_TEXT_SPEED - 5); // Slightly faster typing
+        if (!forceRedisplay) {
+            this.clearOutput();
+            this.addMessage(`<strong>${location.name}</strong>`, 'location-title', false);
+            this.addMessage(location.description, 'location-description', true, utils.CONFIG.DEFAULT_TEXT_SPEED - 10); // Even faster
         }
         
         this.currentLocationName.textContent = location.name;
-        this.locationExits.textContent = Object.keys(location.exits).map(dir => utils.capitalize(dir)).join(', ') || 'None';
+        this.locationExits.textContent = Object.keys(location.exits || {}).map(dir => utils.capitalize(dir)).join(', ') || 'None';
         
-        // Location notes (darkness, etc.)
-        // Example: if (location.properties?.isDark && !playerManager.hasLightSource()) this.locationNotes.textContent = "It's too dark to see clearly.";
-        // else this.locationNotes.textContent = "";
+        this.locationNotes.textContent = location.notes ? location.notes(playerManager) : "";
 
 
         const interactionButtons = [];
@@ -354,14 +370,14 @@ class UIManager {
         if (preventOverlayClose) this.modalContent.classList.add('prevent-overlay-close');
         else this.modalContent.classList.remove('prevent-overlay-close');
 
-        if (modalClass) this.modalContent.className = `modal-content-body ${modalClass}`; // Reset and add specific class
-        else this.modalContent.className = `modal-content-body`;
+        this.modalContent.className = 'modal-content-body'; // Reset base class
+        if (modalClass) this.modalContent.classList.add(...modalClass.split(' '));
 
 
         const actionsContainer = document.createElement('div');
         actionsContainer.className = 'modal-actions';
         
-        if (actionsArray.length === 0 && !preventOverlayClose) { // Add a default close if no actions and not preventing overlay close
+        if (actionsArray.length === 0 && !preventOverlayClose) {
             actionsArray.push({ text: "Close", callback: () => this.hideModal() });
         }
 
@@ -381,17 +397,18 @@ class UIManager {
     hideModal() {
         this.modalOverlay.classList.add('hidden');
         this.modalContent.innerHTML = '';
-        this.modalContent.className = 'modal-content-body'; // Reset class
+        this.modalContent.className = 'modal-content-body';
     }
 
     async showCharacterCreationModal() {
-        this.clearOutput();
-        // Intro lore already handled by startAnimatedIntro
+        // This modal is shown after intro is finished.
+        // INITIAL_ATTRIBUTE_POINTS is now directly imported.
         
         let partnerNameTemp = "Teyang";
         const updatePartnerPreview = (gender) => {
             partnerNameTemp = gender === 'male' ? 'Teyang' : 'Sansan';
-            document.getElementById('partner-name-preview').textContent = partnerNameTemp;
+            const previewEl = document.getElementById('partner-name-preview');
+            if (previewEl) previewEl.textContent = partnerNameTemp;
         };
         
         let html = `<p id="char-create-intro">A voice, ancient and resonant, echoes in your mind, 'Child of Stars, your other half <strong id="partner-name-preview">${partnerNameTemp}</strong> awaits. The path is long, your memories fractured. Seek the threads of fate, lest the shadows consume all that was won.'</p>`;
@@ -403,6 +420,7 @@ class UIManager {
             html += `<option value="${classId}">${PLAYER_CLASSES[classId].name} - ${PLAYER_CLASSES[classId].description}</option>`;
         }
         html += `</select>`;
+        // Use the imported INITIAL_ATTRIBUTE_POINTS
         html += `<p style="margin-top:15px;">You will begin with <strong>${INITIAL_ATTRIBUTE_POINTS}</strong> attribute points to allocate.</p>`;
         
         const actions = [{ text: "Begin Your Journey", className: "primary", callback: () => {
@@ -413,24 +431,26 @@ class UIManager {
             playerManager.setupNewCharacter(name, gender, classId);
             this.hideModal();
             this.addMessage(`Welcome, ${name} the ${PLAYER_CLASSES[classId].name}. Your quest to find ${playerManager.gameState.partnerName} begins.`, "system-message highlight-color");
-            eventBus.publish('parseInput', `quest start main001_find_partner`); // Auto-start first quest
+            eventBus.publish('parseInput', `quest start main001_find_partner`);
         }}];
 
-        this.showGenericModal("Create Your Character", html, actions, 'character-creation-modal', true); // Prevent overlay close
+        this.showGenericModal("Create Your Character", html, actions, 'character-creation-modal', true);
 
-        document.getElementById('char-gender').addEventListener('change', (e) => updatePartnerPreview(e.target.value));
-        document.getElementById('char-name').focus(); // Focus on name input
+        const genderSelect = document.getElementById('char-gender');
+        if (genderSelect) genderSelect.addEventListener('change', (e) => updatePartnerPreview(e.target.value));
+        
+        const charNameInput = document.getElementById('char-name');
+        if (charNameInput) charNameInput.focus();
     }
 
     handleLevelUpUI(levelUpData) {
         this.addMessage(`<strong>LEVEL UP! You are now Level ${levelUpData.newLevel}!</strong>`, "success-message highlight-color");
-        this.refreshAllUI(playerManager.getPublicData()); // Refresh sidebar for HP/MP restore & points
+        this.refreshAllUI(playerManager.getPublicData());
 
         if (levelUpData.attributePointsAvailable > 0) {
-            this.showAttributeAllocationModal(); // Auto-open if points available
+            this.showAttributeAllocationModal();
         }
         if (levelUpData.skillPointsAvailable > 0) {
-            // Optionally auto-open skill tree or just notify
             this.addMessage(`You gained ${levelUpData.skillPointsAvailable} skill point(s)! Use 'skills' or the sidebar button to spend them.`, "system-message");
         }
     }
@@ -456,7 +476,6 @@ class UIManager {
         document.querySelectorAll('.alloc-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 if (playerManager.allocateAttributePoint(e.target.dataset.attr)) {
-                    // Re-render modal content with updated values
                     this.showAttributeAllocationModal(); 
                 }
             });
@@ -508,7 +527,7 @@ class UIManager {
         document.querySelectorAll('.learn-skill-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 if (playerManager.learnSkill(e.target.dataset.skillid)) {
-                    this.showSkillTreeModal(); // Refresh modal
+                    this.showSkillTreeModal();
                 }
             });
         });
@@ -521,15 +540,14 @@ class UIManager {
             html += "<p>Your inventory is empty.</p>";
         } else {
             html += `<ul class="inventory-modal-list">`;
-            playerData.inventory.forEach(item => {
+            playerData.inventory.forEach(item => { // item here already includes base data from getPublicData
                 html += `<li class="item-modal-entry">
                             <strong class="item-${item.rarity || 'common'}">${item.icon || ''} ${item.name}</strong> (x${item.quantity}) - <small>${item.type}</small>
                             <p>${item.description}</p>`;
                 if (item.type === 'consumable' || (item.type === 'weapon' || item.type === 'armor' || item.type === 'accessory')) {
                      html += `<div class="item-actions">`;
-                    if (item.type === 'consumable') html += `<button class="use-item-btn" data-iteminstanceid="${item.instanceId}">Use</button>`;
+                    if (item.type === 'consumable' && item.use_effect) html += `<button class="use-item-btn" data-iteminstanceid="${item.instanceId}">Use</button>`;
                     if (item.type === 'weapon' || item.type === 'armor' || item.type === 'accessory') {
-                         // Check if item is equipped
                          const isEquipped = Object.values(playerData.equipment).some(eq => eq && eq.instanceId === item.instanceId);
                          if (isEquipped) {
                              html += `<button class="unequip-item-btn" data-slot="${Object.keys(playerData.equipment).find(slot => playerData.equipment[slot]?.instanceId === item.instanceId)}">Unequip</button>`;
@@ -550,34 +568,30 @@ class UIManager {
         document.querySelectorAll('.use-item-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const itemInstanceId = e.target.dataset.iteminstanceid;
-                // For consumables, target selection might be needed (self or ally)
-                // For now, assume self or first ally if applicable by item.
-                // This should ideally go through inputParser or combatManager if in combat.
-                eventBus.publish('parseInput', `use ${itemInstanceId}`); // Simplistic, needs better handling
-                this.showInventoryModal(); // Refresh
+                eventBus.publish('parseInput', `use ${itemInstanceId}`); 
+                this.showInventoryModal(); 
             });
         });
         document.querySelectorAll('.equip-item-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 playerManager.equipItem(e.target.dataset.iteminstanceid);
-                this.showInventoryModal(); // Refresh
+                this.showInventoryModal(); 
             });
         });
         document.querySelectorAll('.unequip-item-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 playerManager.unequipItem(e.target.dataset.slot);
-                this.showInventoryModal(); // Refresh
+                this.showInventoryModal(); 
             });
         });
          document.querySelectorAll('.drop-item-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const itemName = e.target.dataset.itemname;
-                // Confirmation for dropping
                 this.showGenericModal("Confirm Drop", `<p>Are you sure you want to drop ${itemName}?</p>`, [
                     {text: "Yes, Drop", className: "danger", callback: () => {
                         playerManager.removeItem(e.target.dataset.iteminstanceid);
-                        this.hideModal(); // Close confirmation
-                        this.showInventoryModal(); // Refresh inventory
+                        this.hideModal(); 
+                        this.showInventoryModal(); 
                     }},
                     {text: "Cancel", callback: () => this.hideModal()}
                 ]);
@@ -589,7 +603,8 @@ class UIManager {
         const playerData = playerManager.getPublicData();
         let html = `<h2>Equipment</h2><div class="equipment-grid">`;
 
-        EQUIPMENT_SLOTS.player.forEach(slot => {
+        const playerSlots = EQUIPMENT_SLOTS.player || [];
+        playerSlots.forEach(slot => {
             const equippedItem = playerData.equipment[slot];
             html += `<div class="equipment-slot-entry">
                         <h4>${utils.capitalize(slot.replace(/([A-Z])/g, ' $1'))}</h4>`;
@@ -605,13 +620,11 @@ class UIManager {
         });
         html += `</div>`;
 
-        if (intentToEquipItemId) { // If opened with intent to equip a specific item
-            // Find item in inventory and show its details, then available slots
-            const itemToEquip = playerData.inventory.find(i => i.instanceId === intentToEquipItemId || i.itemId === intentToEquipItemId); // Try instance then itemId
+        if (intentToEquipItemId) { 
+            const itemToEquip = playerData.inventory.find(i => i.instanceId === intentToEquipItemId || i.itemId === intentToEquipItemId);
             if(itemToEquip) {
                 html += `<hr><h3>Equipping: ${itemToEquip.name}</h3>`;
                 html += `<p>Select a compatible slot above or click "Equip Best Slot".</p>`;
-                // TODO: Logic to find best/compatible slot
             }
         }
 
@@ -621,13 +634,12 @@ class UIManager {
         document.querySelectorAll('.unequip-from-slot-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 playerManager.unequipItem(e.target.dataset.slot);
-                this.showEquipmentModal(); // Refresh
+                this.showEquipmentModal(); 
             });
         });
         document.querySelectorAll('.equip-to-slot-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const slotToFill = e.target.dataset.slot;
-                // Show inventory filtered by items compatible with this slot
                 this.showInventoryForEquipSlot(slotToFill);
             });
         });
@@ -636,12 +648,11 @@ class UIManager {
     showInventoryForEquipSlot(slotId) {
         const playerData = playerManager.getPublicData();
         const compatibleItems = playerData.inventory.filter(item => {
-            const itemData = ITEMS_DATA[item.itemId]; // Base item data
+            const itemData = ITEMS_DATA[item.itemId]; 
             if (!itemData) return false;
-            // Basic slot compatibility check
             if (itemData.slot === slotId) return true;
             if (slotId === "weapon" && itemData.slot === "twoHand") return true;
-            if (slotId === "offHand" && itemData.slot === "shield") return true; // Assuming shields are type armor, slot offHand
+            if (slotId === "offHand" && itemData.slot === "shield") return true; 
             if (slotId.startsWith("accessory") && itemData.slot === "accessory") return true;
             return false;
         });
@@ -660,15 +671,14 @@ class UIManager {
             });
             html += `</ul>`;
         }
-        // Replace current modal content or show a sub-modal
         const currentModalBody = this.modalContent.querySelector('.modal-body-content');
         if (currentModalBody) {
-            currentModalBody.innerHTML = html; // Replace content of existing equipment modal
+            currentModalBody.innerHTML = html; 
 
             document.querySelectorAll('.equip-this-item-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    playerManager.equipItem(e.target.dataset.iteminstanceid); // equipItem handles slot logic
-                    this.showEquipmentModal(); // Refresh main equipment modal
+                    playerManager.equipItem(e.target.dataset.iteminstanceid); 
+                    this.showEquipmentModal(); 
                 });
             });
         }
@@ -691,17 +701,19 @@ class UIManager {
 
         html += `<h3>Derived Stats</h3><div class="char-sheet-section derived-stats-grid">`;
         for (const stat in playerData.derivedStats) {
-            if (DERIVED_STATS_PLAYER.includes(stat) && !stat.startsWith('current')) { // Avoid showing currentHp/Mp twice
+            if (DERIVED_STATS_PLAYER.includes(stat) && !stat.startsWith('current')) { 
                  html += `<p>${stat.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}: <strong>${playerData.derivedStats[stat]}</strong></p>`;
             }
         }
         html += `</div><hr>`;
 
         html += `<h3>Equipment</h3><div class="char-sheet-section">`;
-        for (const slot in playerData.equipment) {
+        const playerSlots = EQUIPMENT_SLOTS.player || [];
+        playerSlots.forEach(slot => {
             const item = playerData.equipment[slot];
             html += `<p>${utils.capitalize(slot.replace(/([A-Z])/g, ' $1'))}: <span class="item-${item?.rarity || 'common'}">${item ? (item.icon || '') + item.name : '<em>Empty</em>'}</span></p>`;
-        }
+        });
+
         html += `<button id="cs-manage-equip">Manage Equipment</button>`;
         html += `</div>`;
         
@@ -726,9 +738,8 @@ class UIManager {
         }
         html += `<br><p><em>"${gachaData.quote}"</em></p>`;
         
-        // Simulate "card flip" or reveal animation
         this.showGenericModal("Study Device Results", "<p style='text-align:center; font-size: 1.5em; animation: pulse 1.5s infinite;'>Analyzing Results...</p>", [], "gacha-result-modal");
-        await utils.delay(1800); // Animation time
+        await utils.delay(1800);
 
         const actions = [{ text: "Awesome!", callback: () => this.hideModal() }];
         this.showGenericModal("Study Device Results", html, actions, "gacha-result-modal");
@@ -736,7 +747,7 @@ class UIManager {
     
     showSansanProposalModal() {
         const playerData = playerManager.getPublicData();
-        if (playerData.name !== "Cutiepatotie") return; // Safety check
+        if (playerData.name !== "Cutiepatotie") return;
 
         let html = `<div class="text-center">
                         <p>Sansan gets down on one knee, his large dino eyes sparkling with emotion. He holds out a small, intricately carved box. Inside, a beautiful ring glows with a soft, warm light.</p>
@@ -747,29 +758,28 @@ class UIManager {
         const actions = [
             { text: "Yes, Sansan! A thousand times yes!", className:"primary", callback: () => {
                 playerManager.addItem("r002_engagement_ring_sansan", 1);
-                playerManager.equipItem(playerManager.gameState.inventory.find(i => i.itemId === "r002_engagement_ring_sansan").instanceId); // Auto-equip
-                playerManager.gameState.sansanDialogue.proposalStage = 3; // Accepted
+                const ringInstance = playerManager.gameState.inventory.find(i => i.itemId === "r002_engagement_ring_sansan");
+                if (ringInstance) playerManager.equipItem(ringInstance.instanceId);
+                playerManager.gameState.sansanDialogue.proposalStage = 3;
                 playerManager.gameState.sansanDialogue.promptActive = null;
                 eventBus.publish('addMessage', {text: "Sansan roars with joy, a surprisingly gentle sound. He carefully slips the ring onto your finger. It fits perfectly.", type: "sansan-chat highlight-color"});
                 this.hideModal();
             }},
             { text: "I... I can't right now, Sansan.", callback: () => {
-                playerManager.gameState.sansanDialogue.proposalStage = -1; // Declined
+                playerManager.gameState.sansanDialogue.proposalStage = -1;
                 playerManager.gameState.sansanDialogue.promptActive = null;
-                // This could lead to the "sad Sansan" path if not handled carefully in AI.
-                // For now, just a sad message.
                 eventBus.publish('addMessage', {text: "Sansan's eyes dim, his posture slumping. 'I... understand.' He slowly gets up, the light from the ring fading slightly.", type: "sansan-chat"});
                 this.hideModal();
             }}
         ];
-        this.showGenericModal("A Dino's Proposal", html, actions, "proposal-modal", true); // Prevent overlay close
+        this.showGenericModal("A Dino's Proposal", html, actions, "proposal-modal", true);
     }
 
     // --- COMBAT UI ---
     setupCombatUI(combatState) {
         this.mainContentArea.classList.add('hidden');
         this.combatUiContainer.classList.remove('hidden');
-        this.clearOutput(); // Clear non-combat messages
+        this.clearOutput(); 
         this.addMessage("<strong>Combat Started!</strong>", "system-message highlight-color");
         this.updateCombatantsUI(combatState);
     }
@@ -778,7 +788,7 @@ class UIManager {
         this.mainContentArea.classList.remove('hidden');
         this.combatUiContainer.classList.add('hidden');
         this.targetSelectionPrompt.classList.add('hidden');
-        this.combatActionButtons.innerHTML = ''; // Clear combat buttons
+        this.combatActionButtons.innerHTML = '';
 
         if (result.won) {
             this.addMessage("<strong>Victory!</strong>", "success-message highlight-color");
@@ -791,37 +801,34 @@ class UIManager {
             }
         } else if (result.fled) {
             this.addMessage("You managed to escape.", "system-message");
-        } else {
-            // Game over handled by gameOver event
         }
-        // Refresh sidebar to show post-combat HP/MP and rewards
         this.refreshAllUI(playerManager.getPublicData());
-        // Display current location again after combat
         this.displayLocation(playerManager.gameState.currentLocationId, true);
     }
 
     updateCombatantsUI(combatState) {
         this.enemyPartyDisplay.innerHTML = '';
         combatState.enemyParty.forEach(enemy => {
-            if (enemy.stats.currentHp > 0) this.enemyPartyDisplay.appendChild(this.createCombatantCard(enemy, false));
+            if (enemy.stats.currentHp > 0) this.enemyPartyDisplay.appendChild(this.createCombatantCard(enemy, false, combatState.currentActorInstanceId === enemy.instanceId));
         });
 
         this.playerPartyDisplayCombat.innerHTML = '';
         combatState.playerParty.forEach(member => {
-            if (member.stats.currentHp > 0) this.playerPartyDisplayCombat.appendChild(this.createCombatantCard(member, true));
+            if (member.stats.currentHp > 0) this.playerPartyDisplayCombat.appendChild(this.createCombatantCard(member, true, combatState.currentActorInstanceId === member.instanceId));
         });
         
-        // Also refresh sidebar for player HP/MP if it's a general update
         this.refreshAllUI(playerManager.getPublicData());
     }
 
-    createCombatantCard(combatant, isPlayerSide) {
+    createCombatantCard(combatant, isPlayerSide, isCurrentTurn) {
         const card = document.createElement('div');
         card.className = 'combatant-card';
         card.dataset.instanceid = combatant.instanceId;
         if (combatant.isPlayer) card.classList.add('player');
         else if (combatant.isAlly) card.classList.add('ally');
         else card.classList.add('enemy');
+
+        if(isCurrentTurn) card.classList.add('current-turn');
 
         card.innerHTML = `
             <h4>${combatant.name} (L${combatant.level || playerManager.gameState.level})</h4>
@@ -830,7 +837,6 @@ class UIManager {
             ${(combatant.isPlayer || combatant.isAlly) ? `<p><small>MP: ${combatant.stats.currentMp}/${combatant.maxStats.maxMp}</small></p>` : ''}
             <div class="status-effects-display"></div>
         `;
-        // Display status effects
         const statusDisplay = card.querySelector('.status-effects-display');
         combatant.statusEffects?.forEach(seInstance => {
             const seData = STATUS_EFFECTS_DATA[seInstance.statusId];
@@ -838,37 +844,55 @@ class UIManager {
                 const seSpan = document.createElement('span');
                 seSpan.className = `status-icon ${seData.type === 'buff' ? 'buff' : 'debuff'}`;
                 seSpan.title = `${seData.name} (${seInstance.duration} turns left)`;
-                seSpan.textContent = seData.name.substring(0,3); // Abbreviation
+                seSpan.textContent = seData.name.substring(0,3);
                 statusDisplay.appendChild(seSpan);
             }
         });
 
-
-        // Add click listener for targeting if it's an enemy or an ally (for heals/buffs)
-        if ((!isPlayerSide && combatManager.pendingPlayerAction) || (isPlayerSide && combatManager.pendingPlayerAction && (combatManager.pendingPlayerAction.type === 'skill' || combatManager.pendingPlayerAction.type === 'item'))) {
-            card.classList.add('targetable');
-            card.addEventListener('click', () => {
-                if (combatManager.pendingPlayerAction) { // Double check
-                    eventBus.publish('playerSelectedCombatTarget', combatant.instanceId);
+        if ((!isPlayerSide && combatManager.pendingPlayerAction) || 
+            (isPlayerSide && combatManager.pendingPlayerAction && (combatManager.pendingPlayerAction.type === 'skill' || combatManager.pendingPlayerAction.type === 'item'))) {
+            
+            const actionDetailId = combatManager.pendingPlayerAction.detailId;
+            let canTargetThis = false;
+            if (combatManager.pendingPlayerAction.type === 'skill') {
+                const skillData = SKILLS_DATA[actionDetailId];
+                if (skillData) {
+                    if (isPlayerSide && (skillData.target.includes('ally') || skillData.target === 'self' || skillData.target === 'party' || skillData.target === 'ally_leader')) canTargetThis = true;
+                    if (!isPlayerSide && skillData.target.includes('enemy')) canTargetThis = true;
                 }
-            });
+            } else if (combatManager.pendingPlayerAction.type === 'item') {
+                const itemRef = playerManager.gameState.inventory.find(i => i.instanceId === actionDetailId);
+                const itemData = itemRef ? ITEMS_DATA[itemRef.itemId] : null;
+                if (itemData && itemData.use_effect) {
+                    const effectTarget = itemData.use_effect.target;
+                    if (isPlayerSide && (effectTarget === 'self_or_ally' || effectTarget === 'ally_single' || effectTarget === 'self')) canTargetThis = true;
+                    if (!isPlayerSide && effectTarget === 'enemy_single') canTargetThis = true;
+                }
+            } else if (combatManager.pendingPlayerAction.type === 'attack' && !isPlayerSide) { // Basic attack only targets enemies
+                canTargetThis = true;
+            }
+
+
+            if (canTargetThis) {
+                card.classList.add('targetable');
+                card.addEventListener('click', () => {
+                    if (combatManager.pendingPlayerAction) {
+                        eventBus.publish('playerSelectedCombatTarget', combatant.instanceId);
+                    }
+                });
+            }
         }
         return card;
     }
 
     highlightCurrentTurnActor(actor, combatState) {
-        document.querySelectorAll('.combatant-card.current-turn').forEach(el => el.classList.remove('current-turn'));
-        if (actor) {
-            const actorCard = document.querySelector(`.combatant-card[data-instanceid="${actor.instanceId}"]`);
-            if (actorCard) actorCard.classList.add('current-turn');
-        }
-        // Update combatant cards (e.g., if status effects changed before turn)
-        this.updateCombatantsUI(combatState);
+        // This is now handled by createCombatantCard by passing isCurrentTurn
+        this.updateCombatantsUI(combatState); // Re-render to apply current-turn class
     }
 
     showPlayerCombatActions(combatState, retry = false) {
-        this.targetSelectionPrompt.classList.add('hidden'); // Hide target prompt
-        this.combatActionButtons.innerHTML = ''; // Clear previous buttons
+        this.targetSelectionPrompt.classList.add('hidden');
+        this.combatActionButtons.innerHTML = '';
         const player = combatState.playerParty.find(p => p.isPlayer);
         if (!player || player.stats.currentHp <= 0) return;
 
@@ -891,7 +915,6 @@ class UIManager {
                 } else if (actionInfo.commandType === 'show_items') {
                     this.showPlayerCombatItemSelection(player, combatState);
                 } else {
-                    // For Attack, Flee, Pass, directly publish combatAction or initiate targeting
                     if (actionInfo.commandType === 'attack') {
                         combatManager.playerInitiatesTargetedAction('attack', null);
                     } else {
@@ -904,17 +927,17 @@ class UIManager {
     }
 
     showPlayerCombatSkillSelection(player, combatState) {
-        this.combatActionButtons.innerHTML = ''; // Clear main action buttons
-        const availableSkills = playerManager.getPublicData().skills; // Get full skill data
+        this.combatActionButtons.innerHTML = '';
+        const availableSkills = playerManager.getPublicData().skills;
 
         if (availableSkills.length === 0) {
             this.addMessage("You have no skills to use!", "warning-message");
-            this.showPlayerCombatActions(combatState, true); // Go back
+            this.showPlayerCombatActions(combatState, true);
             return;
         }
         
-        availableSkills.forEach(skill => {
-            const skillData = SKILLS_DATA[skill.id]; // Full data
+        availableSkills.forEach(skill => { // skill here is already full data from getPublicData
+            const skillData = SKILLS_DATA[skill.id]; // Double check for safety
             if (!skillData) return;
             const button = document.createElement('button');
             button.textContent = `${skillData.name} (MP: ${skillData.mpCost || 0})`;
@@ -923,7 +946,7 @@ class UIManager {
                 button.title = "Not enough MP";
             }
             button.addEventListener('click', () => {
-                this.combatActionButtons.innerHTML = ''; // Clear skill buttons
+                this.combatActionButtons.innerHTML = '';
                 combatManager.playerInitiatesTargetedAction('skill', skillData.id);
             });
             this.combatActionButtons.appendChild(button);
@@ -939,8 +962,8 @@ class UIManager {
     showPlayerCombatItemSelection(player, combatState) {
         this.combatActionButtons.innerHTML = '';
         const usableItems = playerManager.getPublicData().inventory.filter(item => {
-            const itemData = ITEMS_DATA[item.itemId];
-            return itemData && itemData.use_effect && (itemData.use_effect.target !== 'non_combat' /* Add more conditions if items are non-combat only */);
+            // item already includes base data from getPublicData
+            return item.use_effect && (item.use_effect.target !== 'non_combat');
         });
 
         if (usableItems.length === 0) {
@@ -949,7 +972,7 @@ class UIManager {
             return;
         }
 
-        usableItems.forEach(item => { // item here is the full item object from getPublicData
+        usableItems.forEach(item => {
             const button = document.createElement('button');
             button.textContent = `${item.name} (x${item.quantity})`;
             button.addEventListener('click', () => {
@@ -966,39 +989,36 @@ class UIManager {
     }
 
     promptForTarget(targetableEntities, actionMessage) {
-        this.combatActionButtons.innerHTML = ''; // Clear action/skill/item buttons
+        this.combatActionButtons.innerHTML = '';
         this.targetSelectionPrompt.textContent = actionMessage || "Select target:";
         this.targetSelectionPrompt.classList.remove('hidden');
-
-        // Highlight targetable cards (already done by createCombatantCard if pendingPlayerAction exists)
-        // Re-render combatants to ensure only valid targets are clickable
-        this.updateCombatantsUI(combatManager.getCombatState()); // This will make cards targetable
+        this.updateCombatantsUI(combatManager.getCombatState());
 
         const cancelButton = document.createElement('button');
         cancelButton.textContent = "Cancel Target";
         cancelButton.classList.add("danger");
         cancelButton.addEventListener('click', () => {
-            combatManager.cancelPlayerTargetSelection(); // This will call showPlayerCombatActions
+            this.targetSelectionPrompt.classList.add('hidden');
+            combatManager.cancelPlayerTargetSelection();
         });
         this.combatActionButtons.appendChild(cancelButton);
     }
 
 
     showGameOver(reason) {
-        this.hideModal(); // Hide any active modal
+        this.hideModal();
         let html = `<p>${reason}</p><p>Your journey ends here... for now.</p>`;
         const actions = [
             { text: "Try Again (Load Last Save)", callback: () => {
                 this.hideModal();
-                eventBus.publish('parseInput', `load`); // Trigger load from saveManager
+                eventBus.publish('parseInput', `load`);
             }},
             { text: "Start New Game", className:"danger", callback: () => {
                 this.hideModal();
                  eventBus.publish('requestNewGame');
             }}
         ];
-        this.showGenericModal("Game Over", html, actions, "game-over-modal", true); // Prevent overlay close
+        this.showGenericModal("Game Over", html, actions, "game-over-modal", true);
     }
-
 }
 export const uiManager = new UIManager();
