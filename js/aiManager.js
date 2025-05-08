@@ -15,14 +15,16 @@ class AIManager {
 
         eventBus.subscribe('playerActionTaken', () => this.handlePlayerActionSideEffects()); // For Sansan's chat cooldown
         eventBus.subscribe('combatTurnAdvanced', ({ currentTurnActor }) => {
-            if (currentTurnActor?.isAlly && currentTurnActor.id === ALLY_DATA.sansan_dino.id) {
+            if (currentTurnActor?.isAlly && currentTurnActor.id === ALLY_DATA.sansan_dino.id && !currentTurnActor.isPlayerControlled) { // Only if AI controlled
                 this.handleSansanRandomChat(false); // Less likely in combat
             }
         });
     }
 
     handlePlayerActionSideEffects() {
-        if (playerManager.hasAlly(ALLY_DATA.sansan_dino.id)) {
+        // Check if Sansan is in party and AI-controlled for random chats
+        const sansanAlly = playerManager.gameState.allies.find(a => a.allyId === ALLY_DATA.sansan_dino.id);
+        if (sansanAlly && !sansanAlly.isPlayerControlled) {
             if (this.sansanChatCooldown > 0) {
                 this.sansanChatCooldown--;
             }
@@ -40,11 +42,14 @@ class AIManager {
      * @returns {object} - Action object { type: "attack"/"skill"/"item", targetId: "...", skillId: "..." }
      */
     getCombatAction(combatant, playerParty, enemyParty) {
-        if (combatant.isAlly) {
+        if (combatant.isAlly && !combatant.isPlayerControlled) { // Ensure ally is AI controlled
             return this.getAllyCombatAction(combatant, playerParty, enemyParty);
-        } else {
+        } else if (!combatant.isPlayer && !combatant.isAlly) { // Enemy
             return this.getEnemyCombatAction(combatant, playerParty, enemyParty);
         }
+        // Should not reach here for player-controlled allies or players
+        eventBus.publish('aiActionLog', { actorName: combatant.name, action: `is player-controlled or player, skipping AI.` });
+        return { type: 'pass', actorName: combatant.name };
     }
 
     getEnemyCombatAction(enemy, playerParty, enemyParty) {
@@ -54,7 +59,7 @@ class AIManager {
 
         const usableSkills = enemy.skills
             .map(id => SKILLS_DATA[id])
-            .filter(skill => skill && skill.mpCost <= enemy.stats.currentMp && skill.type.includes('attack') || skill.type.includes('debuff')); // Simple filter
+            .filter(skill => skill && skill.mpCost <= enemy.stats.currentMp && (skill.type.includes('attack') || skill.type.includes('debuff'))); // Corrected filter
 
         if (usableSkills.length > 0 && rollPercentage(50)) {
             const skillToUse = usableSkills[getRandomInt(0, usableSkills.length - 1)];
@@ -84,8 +89,11 @@ class AIManager {
     }
 
     getAllyCombatAction(ally, playerParty, enemyParty) {
-        // Sansan's AI (or generic ally AI)
-        if (ally.id === ALLY_DATA.sansan_dino.id) {
+        // This function is now only for AI-controlled allies.
+        // Player-controlled allies will have their actions chosen via UI.
+
+        // Sansan's AI (if not player controlled)
+        if (ally.id === ALLY_DATA.sansan_dino.id && !ally.isPlayerControlled) {
             // Priority:
             // 1. If Cutiepatotie is low HP, and Sansan has Protective Aura and MP, use it.
             // 2. If multiple enemies and Sansan has Taunt and MP, use it.
@@ -122,7 +130,7 @@ class AIManager {
             }
         }
 
-        // Generic Ally AI (if not Sansan or Sansan has no specific action)
+        // Generic Ally AI (if not Sansan or Sansan has no specific action, and is AI controlled)
         const target = this.findLowestHpTarget(enemyParty);
         if (target) {
             eventBus.publish('aiActionLog', { actorName: ally.name, action: `attacks ${target.name}` });
@@ -133,15 +141,20 @@ class AIManager {
     }
 
     findLowestHpTarget(partyArray) {
+        if (!partyArray || partyArray.length === 0) return null;
         return partyArray
             .filter(p => p.stats.currentHp > 0)
-            .sort((a, b) => (a.stats.currentHp / a.stats.maxHp) - (b.stats.currentHp / b.stats.maxHp))[0];
+            .sort((a, b) => (a.stats.currentHp / a.stats.maxHp) - (b.stats.currentHp / b.stats.maxHp))[0] || null;
     }
 
 
     // --- Sansan's Special Dialogue Logic ---
     handleSansanRandomChat(isOutOfCombat) {
         if (!playerManager.isPlayerCharacter("Cutiepatotie") || !playerManager.hasAlly(ALLY_DATA.sansan_dino.id)) return;
+        
+        const sansanAlly = playerManager.gameState.allies.find(a => a.allyId === ALLY_DATA.sansan_dino.id);
+        if (!sansanAlly || sansanAlly.isPlayerControlled) return; // Only for AI controlled Sansan
+
         if (playerManager.gameState.sansanDialogue.promptActive || playerManager.gameState.sansanDialogue.gameOverTriggered) return;
 
         if (this.sansanChatCooldown <= 0 && rollPercentage(this.SANSAN_CHAT_CHANCE)) {
