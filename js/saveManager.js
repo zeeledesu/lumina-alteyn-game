@@ -1,9 +1,9 @@
 // js/saveManager.js
 import { eventBus } from './eventManager.js';
 import { playerManager } from './playerManager.js';
-import { CONFIG } from './utils.js'; // For game over delay
+import { CONFIG } from './utils.js'; 
 
-const SAVE_KEY_PREFIX = "luminaAlteyn_v0.5_save_"; // Updated key for new version
+const SAVE_KEY_PREFIX = "luminaAlteyn_v0.5_save_"; 
 
 class SaveManager {
     constructor() {
@@ -18,6 +18,11 @@ class SaveManager {
     }
     
     confirmNewGame() {
+        // If already in combat, don't allow new game start easily
+        if (playerManager.gameState.inCombat) {
+            eventBus.publish('uiNotification', {message: "Cannot start a new game during combat.", type: "error"});
+            return;
+        }
         eventBus.publish('showModal', {
             title: "New Game Confirmation",
             content: "<p>Are you sure you want to start a new game? Any unsaved progress will be lost.</p>",
@@ -25,7 +30,7 @@ class SaveManager {
                 { text: "Yes, Start New Game", callback: () => {
                     localStorage.removeItem(SAVE_KEY_PREFIX + "default");
                     eventBus.publish('hideModal');
-                    eventBus.publish('requestNewGame'); // main.js will listen and reset/start creation
+                    eventBus.publish('requestNewGame'); 
                 }, className: "danger" },
                 { text: "No, Cancel", callback: () => eventBus.publish('hideModal') }
             ]
@@ -34,12 +39,11 @@ class SaveManager {
 
     saveGame(slotName = "default") {
         try {
-            // Ensure player is not in combat before saving critical state
             if (playerManager.gameState.inCombat) {
                 eventBus.publish('uiNotification', { message: "Cannot save during combat.", type: 'error' });
                 return;
             }
-            const gameState = playerManager.getState(); // playerManager now handles Map to Array conversion
+            const gameState = playerManager.getState(); 
             localStorage.setItem(SAVE_KEY_PREFIX + slotName, JSON.stringify(gameState));
             eventBus.publish('uiNotification', { message: `Game saved to slot '${slotName}'.`, type: 'success' });
         } catch (error) {
@@ -50,10 +54,14 @@ class SaveManager {
 
     loadGame(slotName = "default") {
         try {
+             if (playerManager.gameState.inCombat) {
+                eventBus.publish('uiNotification', { message: "Cannot load game during combat.", type: 'error' });
+                return;
+            }
             const savedDataString = localStorage.getItem(SAVE_KEY_PREFIX + slotName);
             if (savedDataString) {
                 const savedState = JSON.parse(savedDataString);
-                playerManager.loadState(savedState); // PlayerManager handles updating itself and publishing events
+                playerManager.loadState(savedState); 
                 eventBus.publish('uiNotification', { message: `Game loaded from slot '${slotName}'.`, type: 'success' });
             } else {
                 eventBus.publish('uiNotification', { message: `No save data found in slot '${slotName}'. Starting new game.`, type: 'system' });
@@ -62,32 +70,31 @@ class SaveManager {
         } catch (error) {
             console.error("Error loading game:", error);
             eventBus.publish('uiNotification', { message: "Failed to load game data. It might be corrupted. " + error.message, type: 'error' });
-            // localStorage.removeItem(SAVE_KEY_PREFIX + slotName); // Optionally remove corrupted data
-            eventBus.publish('requestNewGame'); // Fallback to new game
+            eventBus.publish('requestNewGame'); 
         }
     }
 
     checkForAutoLoad(slotName = "default") {
         const savedDataString = localStorage.getItem(SAVE_KEY_PREFIX + slotName);
         if (savedDataString) {
-            // Ask user if they want to continue or start new
              eventBus.publish('showModal', {
-                title: "Continue Game?",
-                content: "<p>Saved data found. Would you like to continue your previous game or start a new one?</p>",
+                title: "Welcome Back!",
+                content: "<p>Saved data found. Would you like to continue your adventure or start anew?</p>",
                 actions: [
                     { text: "Continue Game", callback: () => {
                          eventBus.publish('hideModal');
-                         this.loadGame(slotName);
-                    }, className: "primary" },
+                         this.loadGame(slotName); // This loads the game and should NOT play the animated intro
+                    }, className: "primary button-glow-continue" },
                     { text: "Start New Game", callback: () => {
-                        localStorage.removeItem(SAVE_KEY_PREFIX + slotName); // Clear if starting new
+                        localStorage.removeItem(SAVE_KEY_PREFIX + slotName); 
                         eventBus.publish('hideModal');
-                        eventBus.publish('requestNewGame');
-                    } }
-                ]
+                        eventBus.publish('requestNewGame'); // This will trigger the animated intro
+                    }, className: "button-glow-new" }
+                ],
+                preventOverlayClose: true // Prevent closing by clicking outside
             });
         } else {
-            eventBus.publish('requestNewGame'); // No save data, start new game process
+            eventBus.publish('requestNewGame'); 
         }
     }
 }
