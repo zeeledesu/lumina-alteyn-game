@@ -42,7 +42,7 @@ class WorldManager {
             // locationChanged event will be published AFTER encounter check in V0.5
             // The encounterManager listens to locationChanged.
             // For V0.5, let encounterManager handle encounter checks on 'locationChanged'
-            eventBus.publish('locationChanged', { newLocationId, oldLocationId }); // EncounterManager will pick this up
+            eventBus.publish('locationChanged', { newLocationId: nextLocationId, oldLocationId }); // Corrected: use nextLocationId
 
             // Call onEnter for the new location (after encounter check if encounters happen before full entry description)
             // If encounters are immediate upon trying to enter, this onEnter might be too late for flavor text.
