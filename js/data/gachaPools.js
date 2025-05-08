@@ -1,13 +1,11 @@
 // js/data/gachaPools.js
-// Item rarities: common, uncommon, rare, epic, legendary, mythic, artifact, divine
 
 export const GACHA_POOLS = {
     standard_study_rewards: {
         name: "Standard Study Rewards",
         cost: 10, // SP cost
-        pulls: [ // Each object is a potential "slot" in the pull, can have multiple items
+        pulls: [ 
             {
-                // Slot 1: Main Reward
                 items: [
                     // Consumables
                     { itemId: "c001", weight: 250, quantity: {min: 2, max: 5} }, // Minor Healing Draught
@@ -20,15 +18,16 @@ export const GACHA_POOLS = {
                     // Uncommon Gear
                     { itemId: "w003", weight: 40, quantity: 1 }, // Hunter's Bow
                     { itemId: "r001", weight: 30, quantity: 1 }, // Ring of Minor Vigor
-                    // Rare Gear (very low chance)
-                    // Define some rare items, e.g., w005_steel_longsword, a005_chainmail_vest
+                    // Junk Item
+                    { itemId: "i001", weight: 150, quantity: {min: 5, max: 15} } // Old Coins
+                    // Rare Gear (Add later if needed)
                     // { itemId: "w005_steel_longsword", weight: 5, quantity: 1 },
                     // { itemId: "a005_chainmail_vest", weight: 5, quantity: 1 },
                 ],
-                guaranteedRarity: null, // e.g., 'uncommon' to ensure at least one uncommon
+                guaranteedRarity: null, 
             }
         ],
-        displayQuotes: [ // Flavor text for pulls
+        displayQuotes: [ 
             "Knowledge is power!",
             "The pursuit of truth yields unexpected treasures.",
             "Even the smallest discovery can change the world.",
@@ -36,5 +35,4 @@ export const GACHA_POOLS = {
             "Fortune favors the studious!"
         ]
     },
-    // Future: premium_artifact_cache, event_specific_pool
 };
