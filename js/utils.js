@@ -5,10 +5,10 @@ export const CONFIG = {
     FAST_TEXT_SPEED: 5,
     INTRO_TEXT_SPEED: 50, 
     GAME_OVER_DELAY: 5000, 
-    AI_THINK_DELAY: 1000, // ms for AI "thinking"
-    ACTION_ANIMATION_DELAY: 700, // ms for action text display before effect
-    POST_ACTION_DELAY: 300, // ms brief pause after action text/effect before next turn
-    MULTI_TARGET_EFFECT_DELAY: 200, // ms pause between effects on multiple targets
+    AI_THINK_DELAY: 1000, 
+    ACTION_ANIMATION_DELAY: 700, 
+    POST_ACTION_DELAY: 300, 
+    MULTI_TARGET_EFFECT_DELAY: 200, 
 };
 
 export function getRandomInt(min, max) {
@@ -32,19 +32,36 @@ export function delay(ms) {
 
 export async function typeEffect(element, text, charDelay = CONFIG.DEFAULT_TEXT_SPEED, clearExisting = true) {
     if (clearExisting) element.innerHTML = '';
-    if (!text) return; // Guard against null/undefined text
+    if (!text) return; 
 
-    // Simple textContent update for general messages to avoid animation conflicts
-    // The intro sequence will rely solely on CSS for its animation.
     const chars = text.split('');
+    let currentHTML = '';
+    let inTag = false;
     for (let i = 0; i < chars.length; i++) {
-        element.textContent += chars[i];
-        if (chars[i] !== ' ') { 
-            await delay(charDelay);
+        const char = chars[i];
+        
+        // Basic handling for simple HTML tags like <strong> or <i>
+        if (char === '<') {
+            inTag = true;
+        }
+        
+        currentHTML += char;
+
+        if (inTag) {
+             if (char === '>') {
+                inTag = false;
+                element.innerHTML = currentHTML; // Update DOM immediately with tag
+             }
+        } else {
+            element.innerHTML = currentHTML; // Update DOM char by char outside tags
+             if (char !== ' ') { 
+                await delay(charDelay);
+             }
         }
     }
 }
 
+// animateText is not currently used but kept for potential future use
 export async function animateText(element, text, wordDelay = 150, clearExisting = true) {
     if (clearExisting) element.innerHTML = '';
     const words = text.split(' ');
@@ -55,7 +72,7 @@ export async function animateText(element, text, wordDelay = 150, clearExisting 
         span.style.transform = 'translateY(10px)';
         span.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
         element.appendChild(span);
-        await delay(wordDelay / 2);
+        await delay(wordDelay / 2); // Stagger appearance slightly
         span.style.opacity = '1';
         span.style.transform = 'translateY(0)';
         await delay(wordDelay);
