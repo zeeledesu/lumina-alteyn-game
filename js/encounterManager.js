@@ -64,6 +64,7 @@ class EncounterManager {
                 const enemyInstance = JSON.parse(JSON.stringify(enemyBase)); // Deep clone
                 enemyInstance.instanceId = `enemy_${enemyId}_${Date.now()}_${getRandomInt(1000,9999)}`;
                 enemyInstance.stats.currentHp = enemyInstance.stats.maxHp; // Ensure full health
+                enemyInstance.stats.currentMp = enemyInstance.stats.maxMp || 0; // Ensure MP full or 0
                 enemyInstance.statusEffects = []; // Initialize status effects array
                 enemyParty.push(enemyInstance);
             } else {
