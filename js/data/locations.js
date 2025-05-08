@@ -174,4 +174,4 @@ export const LOCATIONS_DATA = {
         ],
         music: "theme_library_calm"
     }
-}
+};
